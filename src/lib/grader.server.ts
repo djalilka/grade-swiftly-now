@@ -3,26 +3,57 @@
  *
  * Swap the implementation here (stronger OCR / different model) without
  * touching the UI. Contract: two base64 data URLs in, a score out.
+ *
+ * Determinism rules:
+ *  - temperature/top_p pinned to 0
+ *  - the system prompt below is a FIXED constant, never templated per request
+ *  - the final score is summed in code from the per-question breakdown
  */
+
+export type GradeQuestion = {
+  question_number: number;
+  correct_answer: string;
+  student_answer: string;
+  points_earned: number;
+  points_possible: number;
+  reasoning: string;
+};
 
 export type GradeResult = {
   score: number;
   total: number;
+  questions: GradeQuestion[];
 };
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-3.7-flash";
 
-const SYSTEM_PROMPT = `You are an exam grader with expert OCR for handwritten and printed Arabic and French.
+/** FIXED grading prompt — do not build dynamically. */
+const SYSTEM_PROMPT = `You are a strict, deterministic exam grader with expert OCR for handwritten and printed Arabic and French.
+
 You receive two images:
 1) The student's answer sheet.
-2) The official correction / answer key sheet, which states the correct answers and the points for each question (e.g. "Q1: ... (2 pts)").
+2) The official correction / answer key sheet, stating the correct answers and the points per question.
 
-Read both sheets carefully, match the student's answers to the key question by question, award full/partial points per the key, and compute the total.
-If the key does not state a maximum, assume the standard total of 20.
-If either sheet is too blurry, empty, or unreadable, respond with {"error": "unreadable"}.
-Otherwise respond with ONLY a JSON object, no markdown, no explanation:
-{"score": <number>, "total": <number>}`;
+Follow these steps IN ORDER, and write the result of every step into the JSON output:
+STEP 1 — From the answer key sheet, list every question: its number, its exact correct answer, and its point value (points_possible).
+STEP 2 — For each of those questions, extract exactly what the student wrote on the student's sheet. If nothing was written, use the empty string "".
+STEP 3 — For each question, compare the student's answer with the correct answer and decide full points, partial points, or zero. Give a one-line reason in "reasoning".
+STEP 4 — Only after doing steps 1-3 for EVERY question, output the JSON.
+
+Grading rules (apply identically every time):
+- Ignore differences in spelling accents, letter shape, spacing, and capitalization if the meaning is clearly identical.
+- Award partial points only when the answer key explicitly allows partial credit or the answer is partially complete; otherwise award full or zero.
+- Never invent questions that are not on the key. Never skip a question on the key.
+- points_earned must never exceed points_possible.
+
+If either sheet is too blurry, empty, or unreadable, respond with exactly {"error": "unreadable"}.
+
+Otherwise respond with ONLY this JSON object, no markdown fences, no explanation:
+{"questions":[{"question_number":1,"correct_answer":"...","student_answer":"...","points_earned":2,"points_possible":2,"reasoning":"..."}],"total_score":5,"total_possible":6}`;
+
+const USER_INSTRUCTION =
+  "Grade the student's sheet against the key. Follow STEP 1 to STEP 4 and return only the JSON object.";
 
 export async function gradeSheets(
   studentImage: string,
@@ -39,6 +70,9 @@ export async function gradeSheets(
     },
     body: JSON.stringify({
       model: MODEL,
+      temperature: 0,
+      top_p: 0,
+      seed: 7,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -48,7 +82,7 @@ export async function gradeSheets(
             { type: "image_url", image_url: { url: studentImage } },
             { type: "text", text: "Correction / answer key sheet:" },
             { type: "image_url", image_url: { url: keyImage } },
-            { type: "text", text: 'Return only {"score": n, "total": n}.' },
+            { type: "text", text: USER_INSTRUCTION },
           ],
         },
       ],
@@ -68,16 +102,60 @@ export async function gradeSheets(
   const text = json.choices?.[0]?.message?.content ?? "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("PARSE_ERROR");
-  const parsed = JSON.parse(match[0]) as {
-    score?: number;
-    total?: number;
+
+  let parsed: {
+    questions?: unknown;
+    total_score?: unknown;
+    total_possible?: unknown;
     error?: string;
   };
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    throw new Error("PARSE_ERROR");
+  }
   if (parsed.error) throw new Error("UNREADABLE");
-  if (typeof parsed.score !== "number") throw new Error("PARSE_ERROR");
 
-  return {
-    score: Math.round(parsed.score * 100) / 100,
-    total: typeof parsed.total === "number" && parsed.total > 0 ? parsed.total : 20,
-  };
+  const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const questions: GradeQuestion[] = rawQuestions
+    .map((q, i) => {
+      const o = (q ?? {}) as Record<string, unknown>;
+      const possible = num(o["points_possible"]);
+      const earned = clamp(num(o["points_earned"]), 0, possible);
+      return {
+        question_number:
+          typeof o["question_number"] === "number" ? o["question_number"] : i + 1,
+        correct_answer: String(o["correct_answer"] ?? ""),
+        student_answer: String(o["student_answer"] ?? ""),
+        points_earned: earned,
+        points_possible: possible,
+        reasoning: String(o["reasoning"] ?? ""),
+      };
+    })
+    .filter((q) => q.points_possible > 0);
+
+  if (questions.length === 0) throw new Error("PARSE_ERROR");
+
+  // Sum in code — never trust the model's stated total.
+  const score = round2(questions.reduce((s, q) => s + q.points_earned, 0));
+  const summedPossible = round2(
+    questions.reduce((s, q) => s + q.points_possible, 0),
+  );
+  const statedPossible = num(parsed.total_possible);
+  const total = summedPossible > 0 ? summedPossible : statedPossible > 0 ? statedPossible : 20;
+
+  return { score: clamp(score, 0, total), total, questions };
+}
+
+function num(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return round2(Math.min(Math.max(n, min), max));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
