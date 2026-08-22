@@ -173,10 +173,14 @@ function Index() {
         type="button"
         disabled={!ready}
         onClick={onGrade}
-        className="w-full rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
       >
+        {loading && (
+          <span className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
         {loading ? "جارٍ التصحيح…" : "تصحيح"}
       </button>
+
 
       {error && (
         <p className="rounded-xl bg-destructive/10 px-4 py-3 text-center text-sm text-destructive">
