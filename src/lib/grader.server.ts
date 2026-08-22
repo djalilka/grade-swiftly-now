@@ -20,7 +20,8 @@ You receive two images:
 
 Read both sheets carefully, match the student's answers to the key question by question, award full/partial points per the key, and compute the total.
 If the key does not state a maximum, assume the standard total of 20.
-Respond with ONLY a JSON object, no markdown, no explanation:
+If either sheet is too blurry, empty, or unreadable, respond with {"error": "unreadable"}.
+Otherwise respond with ONLY a JSON object, no markdown, no explanation:
 {"score": <number>, "total": <number>}`;
 
 export async function gradeSheets(
@@ -67,7 +68,12 @@ export async function gradeSheets(
   const text = json.choices?.[0]?.message?.content ?? "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("PARSE_ERROR");
-  const parsed = JSON.parse(match[0]) as { score?: number; total?: number };
+  const parsed = JSON.parse(match[0]) as {
+    score?: number;
+    total?: number;
+    error?: string;
+  };
+  if (parsed.error) throw new Error("UNREADABLE");
   if (typeof parsed.score !== "number") throw new Error("PARSE_ERROR");
 
   return {
