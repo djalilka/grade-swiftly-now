@@ -33,6 +33,8 @@ function readFile(file: File): Promise<string> {
   });
 }
 
+const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
 function UploadField({
   label,
   file,
@@ -44,12 +46,41 @@ function UploadField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [invalid, setInvalid] = useState(false);
+
+  function accept(f: File | null | undefined) {
+    if (!f) return;
+    if (!ACCEPTED.includes(f.type)) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    onPick(f);
+    setPreview(URL.createObjectURL(f));
+  }
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => inputRef.current?.click()}
-      className="group flex w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-card px-5 py-8 text-center transition-colors hover:border-primary hover:bg-accent"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        accept(e.dataTransfer.files?.[0]);
+      }}
+      className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-card px-5 py-8 text-center transition-colors hover:border-primary hover:bg-accent ${
+        dragging ? "border-primary bg-accent" : "border-border"
+      }`}
     >
       {preview ? (
         <img
@@ -63,21 +94,24 @@ function UploadField({
         </span>
       )}
       <span className="text-base font-semibold text-foreground">{label}</span>
-      <span className="text-xs text-muted-foreground">
-        {file ? file.name : "اضغط لاختيار صورة أو التقاط لقطة"}
+      <span
+        className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}
+      >
+        {invalid
+          ? "صيغة غير مدعومة — استعمل JPG أو PNG"
+          : file
+            ? file.name
+            : "اضغط أو اسحب الصورة هنا (JPG / PNG)"}
       </span>
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
         className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0] ?? null;
-          onPick(f);
-          setPreview(f ? URL.createObjectURL(f) : null);
-        }}
+        onChange={(e) => accept(e.target.files?.[0])}
       />
-    </button>
+    </div>
+
   );
 }
 
@@ -110,8 +144,11 @@ function Index() {
           ? "الخدمة مشغولة حاليًا، حاول بعد قليل."
           : msg.includes("NO_CREDITS")
             ? "نفد رصيد الذكاء الاصطناعي. يرجى إضافة رصيد."
-            : "تعذّر التصحيح. تأكد من وضوح الصورتين وحاول مجددًا.",
+            : msg.includes("PARSE_ERROR") || msg.includes("UNREADABLE")
+              ? "تعذّرت قراءة الصورة بوضوح، الرجاء التقاط صورة أوضح."
+              : "تعذّر التصحيح. تأكد من وضوح الصورتين وحاول مجددًا.",
       );
+
     } finally {
       setLoading(false);
     }
@@ -139,10 +176,14 @@ function Index() {
         type="button"
         disabled={!ready}
         onClick={onGrade}
-        className="w-full rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
       >
+        {loading && (
+          <span className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
         {loading ? "جارٍ التصحيح…" : "تصحيح"}
       </button>
+
 
       {error && (
         <p className="rounded-xl bg-destructive/10 px-4 py-3 text-center text-sm text-destructive">
