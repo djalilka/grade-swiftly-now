@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { gradeSubmission } from "@/lib/grade.functions";
+import { setLastResult, type GradeResult } from "@/lib/result-store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -10,12 +11,12 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "ارفع ورقة إجابة الطالب وورقة التصحيح واحصل على العلامة النهائية فورًا. يدعم العربية والفرنسية.",
+          "ارفع أوراق إجابة الطالب وأوراق التصحيح واحصل على العلامة النهائية فورًا. يدعم العربية والفرنسية وعدة صفحات.",
       },
       { property: "og:title", content: "TashihAI — تصحيح آلي لأوراق الإجابة" },
       {
         property: "og:description",
-        content: "علامة نهائية فورية من صورتين: ورقة الطالب وورقة التصحيح.",
+        content: "علامة نهائية فورية من أوراق الطالب وأوراق التصحيح.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -34,197 +35,182 @@ function readFile(file: File): Promise<string> {
 }
 
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const MAX_FILES = 10;
 
-type QuestionResult = {
-  question_number: number;
-  correct_answer: string;
-  student_answer: string;
-  points_earned: number;
-  points_possible: number;
-  reasoning: string;
-};
-
-type GradeResult = {
-  score: number;
-  total: number;
-  questions: QuestionResult[];
-};
+type Picked = { id: string; file: File; url: string };
 
 function UploadField({
   label,
-  file,
-  onPick,
+  items,
+  onChange,
 }: {
   label: string;
-  file: File | null;
-  onPick: (f: File | null) => void;
+  items: Picked[];
+  onChange: (next: Picked[]) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [invalid, setInvalid] = useState(false);
 
-  function accept(f: File | null | undefined) {
-    if (!f) return;
-    if (!ACCEPTED.includes(f.type)) {
-      setInvalid(true);
-      return;
-    }
-    setInvalid(false);
-    onPick(f);
-    setPreview(URL.createObjectURL(f));
+  function accept(files: FileList | null | undefined) {
+    if (!files || files.length === 0) return;
+    const list = Array.from(files);
+    const valid = list.filter((f) => ACCEPTED.includes(f.type));
+    setInvalid(valid.length !== list.length);
+    if (valid.length === 0) return;
+    const next = [
+      ...items,
+      ...valid.map((f) => ({
+        id: `${f.name}-${f.size}-${Math.random().toString(36).slice(2)}`,
+        file: f,
+        url: URL.createObjectURL(f),
+      })),
+    ].slice(0, MAX_FILES);
+    onChange(next);
+  }
+
+  function move(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    const [it] = next.splice(index, 1);
+    next.splice(target, 0, it!);
+    onChange(next);
+  }
+
+  function remove(index: number) {
+    const next = [...items];
+    const [it] = next.splice(index, 1);
+    if (it) URL.revokeObjectURL(it.url);
+    onChange(next);
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => inputRef.current?.click()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        accept(e.dataTransfer.files?.[0]);
-      }}
-      className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-card px-5 py-8 text-center transition-colors hover:border-primary hover:bg-accent ${
-        dragging ? "border-primary bg-accent" : "border-border"
-      }`}
-    >
-      {preview ? (
-        <img
-          src={preview}
-          alt={label}
-          className="h-28 w-auto rounded-lg object-cover shadow-sm"
-        />
-      ) : (
+    <div className="flex flex-col gap-3">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          accept(e.dataTransfer.files);
+        }}
+        className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-card px-5 py-8 text-center transition-colors hover:border-primary hover:bg-accent ${
+          dragging ? "border-primary bg-accent" : "border-border"
+        }`}
+      >
         <span className="flex size-12 items-center justify-center rounded-full bg-secondary text-2xl">
           ↑
         </span>
-      )}
-      <span className="text-base font-semibold text-foreground">{label}</span>
-      <span
-        className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        {invalid
-          ? "صيغة غير مدعومة — استعمل JPG أو PNG"
-          : file
-            ? file.name
-            : "اضغط أو اسحب الصورة هنا (JPG / PNG)"}
-      </span>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/jpg,image/webp"
-        className="hidden"
-        onChange={(e) => accept(e.target.files?.[0])}
-      />
-    </div>
-  );
-}
-
-function StatusBadge({
-  earned,
-  possible,
-}: {
-  earned: number;
-  possible: number;
-}) {
-  const full = earned === possible;
-  const zero = earned === 0;
-  const partial = !full && !zero;
-
-  const className = full
-    ? "bg-primary/10 text-primary"
-    : partial
-      ? "bg-warning/10 text-warning"
-      : "bg-destructive/10 text-destructive";
-
-  const label = full ? "صحيحة" : partial ? "جزئية" : "خاطئة";
-
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${className}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function QuestionCard({ question }: { question: QuestionResult }) {
-  return (
-    <div className="rounded-2xl border border-border bg-background p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-bold text-foreground">
-          السؤال {question.question_number}
+        <span className="text-base font-semibold text-foreground">{label}</span>
+        <span
+          className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          {invalid
+            ? "بعض الملفات غير مدعومة — استعمل JPG أو PNG"
+            : items.length > 0
+              ? `${items.length} صفحة — اضغط لإضافة المزيد`
+              : "اضغط أو اسحب الصور هنا (عدة صفحات مدعومة)"}
         </span>
-        <StatusBadge
-          earned={question.points_earned}
-          possible={question.points_possible}
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/jpg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            accept(e.target.files);
+            e.target.value = "";
+          }}
         />
       </div>
-      <div className="mt-3 grid grid-cols-1 gap-2 text-sm">
-        <div className="flex justify-between gap-2">
-          <span className="text-muted-foreground">الإجابة الصحيحة:</span>
-          <span className="text-foreground" dir="auto">
-            {question.correct_answer}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-muted-foreground">إجابة الطالب:</span>
-          <span className="text-foreground" dir="auto">
-            {question.student_answer}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-muted-foreground">النقاط:</span>
-          <span
-            className="font-semibold tabular-nums text-foreground"
-            dir="ltr"
-          >
-            {question.points_earned}/{question.points_possible}
-          </span>
-        </div>
-        {question.reasoning && (
-          <div className="mt-1 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-            {question.reasoning}
-          </div>
-        )}
-      </div>
+
+      {items.length > 0 && (
+        <ul className="flex gap-3 overflow-x-auto pb-1">
+          {items.map((it, i) => (
+            <li
+              key={it.id}
+              className="relative shrink-0 rounded-xl border border-border bg-card p-2"
+            >
+              <img
+                src={it.url}
+                alt={`${label} — صفحة ${i + 1}`}
+                className="h-24 w-20 rounded-lg object-cover"
+              />
+              <span className="absolute right-3 top-3 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">
+                {i + 1}
+              </span>
+              <div className="mt-2 flex items-center justify-between gap-1">
+                <button
+                  type="button"
+                  onClick={() => move(i, -1)}
+                  disabled={i === 0}
+                  aria-label="تحريك لليمين"
+                  className="rounded-md px-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  ›
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  aria-label="حذف الصفحة"
+                  className="rounded-md px-2 text-xs font-semibold text-destructive hover:underline"
+                >
+                  حذف
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(i, 1)}
+                  disabled={i === items.length - 1}
+                  aria-label="تحريك لليسار"
+                  className="rounded-md px-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  ‹
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
 function Index() {
   const grade = useServerFn(gradeSubmission);
-  const [student, setStudent] = useState<File | null>(null);
-  const [key, setKey] = useState<File | null>(null);
+  const navigate = useNavigate();
+  const [student, setStudent] = useState<Picked[]>([]);
+  const [key, setKey] = useState<Picked[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showDetails, setShowDetails] = useState(false);
 
-  const ready = !!student && !!key && !loading;
+  const ready = student.length > 0 && key.length > 0 && !loading;
 
   async function onGrade() {
-    if (!student || !key) return;
+    if (student.length === 0 || key.length === 0) return;
     setLoading(true);
     setError(null);
     setResult(null);
-    setShowDetails(false);
     try {
-      const [studentImage, keyImage] = await Promise.all([
-        readFile(student),
-        readFile(key),
+      const [studentImages, keyImages] = await Promise.all([
+        Promise.all(student.map((p) => readFile(p.file))),
+        Promise.all(key.map((p) => readFile(p.file))),
       ]);
-      const res = await grade({ data: { studentImage, keyImage } });
+      const res = (await grade({
+        data: { studentImages, keyImages },
+      })) as GradeResult;
       setResult(res);
+      setLastResult(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       setError(
@@ -233,8 +219,8 @@ function Index() {
           : msg.includes("NO_CREDITS")
             ? "نفد رصيد الذكاء الاصطناعي. يرجى إضافة رصيد."
             : msg.includes("PARSE_ERROR") || msg.includes("UNREADABLE")
-              ? "تعذّرت قراءة الصورة بوضوح، الرجاء التقاط صورة أوضح."
-              : "تعذّر التصحيح. تأكد من وضوح الصورتين وحاول مجددًا.",
+              ? "تعذّرت قراءة الصور بوضوح، الرجاء التقاط صور أوضح."
+              : "تعذّر التصحيح. تأكد من وضوح الصور وحاول مجددًا.",
       );
     } finally {
       setLoading(false);
@@ -252,20 +238,20 @@ function Index() {
           TashihAI
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          ارفع ورقة الطالب وورقة التصحيح، واحصل على العلامة النهائية.
+          ارفع أوراق الطالب وأوراق التصحيح، واحصل على العلامة النهائية.
         </p>
       </header>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <UploadField
-          label="ورقة إجابة الطالب"
-          file={student}
-          onPick={setStudent}
+          label="أوراق إجابة الطالب"
+          items={student}
+          onChange={setStudent}
         />
         <UploadField
-          label="ورقة التصحيح النموذجية"
-          file={key}
-          onPick={setKey}
+          label="أوراق التصحيح النموذجية"
+          items={key}
+          onChange={setKey}
         />
       </div>
 
@@ -295,32 +281,11 @@ function Index() {
           </p>
           <button
             type="button"
-            onClick={() => setShowDetails((s) => !s)}
-            className="text-sm font-semibold text-primary hover:underline"
+            onClick={() => navigate({ to: "/results" })}
+            className="mt-2 rounded-xl bg-secondary px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
           >
-            {showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل"}
+            عرض التفاصيل
           </button>
-
-          {showDetails && (
-            <div className="w-full border-t border-border pt-5">
-              <div className="mb-4 text-center">
-                <span className="text-sm font-semibold text-foreground">
-                  تفاصيل التصحيح
-                </span>
-                <p
-                  className="mt-1 text-2xl font-black tabular-nums text-primary"
-                  dir="ltr"
-                >
-                  {result.score}/{result.total}
-                </p>
-              </div>
-              <div className="flex flex-col gap-3">
-                {result.questions.map((q) => (
-                  <QuestionCard key={q.question_number} question={q} />
-                ))}
-              </div>
-            </div>
-          )}
         </section>
       )}
     </main>
