@@ -31,13 +31,15 @@ const MODEL = "google/gemini-3.7-flash";
 /** FIXED grading prompt — do not build dynamically. */
 const SYSTEM_PROMPT = `You are a strict, deterministic exam grader with expert OCR for handwritten and printed Arabic and French.
 
-You receive two images:
-1) The student's answer sheet.
-2) The official correction / answer key sheet, stating the correct answers and the points per question.
+You receive two SETS of images:
+SET A = the student's answer sheet, which may span several pages, given in page order.
+SET B = the official correction / answer key sheet, which may also span several pages, given in page order.
+
+Treat each set as ONE continuous document. Read ALL pages of a set together before doing anything: questions may continue across page breaks, and a question's answer may start on one page and finish on the next. Never grade a page in isolation and never duplicate a question that appears on more than one page.
 
 Follow these steps IN ORDER, and write the result of every step into the JSON output:
-STEP 1 — From the answer key sheet, list every question: its number, its exact correct answer, and its point value (points_possible).
-STEP 2 — For each of those questions, extract exactly what the student wrote on the student's sheet. If nothing was written, use the empty string "".
+STEP 1 — Read all pages of SET B and list every question: its number, its exact correct answer, and its point value (points_possible).
+STEP 2 — Read all pages of SET A and, for each of those questions, extract exactly what the student wrote. If nothing was written anywhere in SET A, use the empty string "".
 STEP 3 — For each question, compare the student's answer with the correct answer and decide full points, partial points, or zero. Give a one-line reason in "reasoning".
 STEP 4 — Only after doing steps 1-3 for EVERY question, output the JSON.
 
@@ -47,17 +49,32 @@ Grading rules (apply identically every time):
 - Never invent questions that are not on the key. Never skip a question on the key.
 - points_earned must never exceed points_possible.
 
-If either sheet is too blurry, empty, or unreadable, respond with exactly {"error": "unreadable"}.
+If the sheets are too blurry, empty, or unreadable, respond with exactly {"error": "unreadable"}.
 
 Otherwise respond with ONLY this JSON object, no markdown fences, no explanation:
 {"questions":[{"question_number":1,"correct_answer":"...","student_answer":"...","points_earned":2,"points_possible":2,"reasoning":"..."}],"total_score":5,"total_possible":6}`;
 
 const USER_INSTRUCTION =
-  "Grade the student's sheet against the key. Follow STEP 1 to STEP 4 and return only the JSON object.";
+  "Grade the student's sheet (SET A, all pages) against the key (SET B, all pages). Follow STEP 1 to STEP 4 and return only the JSON object.";
+
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+function pageBlocks(label: string, images: string[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [
+    { type: "text", text: `${label} — ${images.length} page(s), in order:` },
+  ];
+  images.forEach((url, i) => {
+    blocks.push({ type: "text", text: `Page ${i + 1} of ${images.length}:` });
+    blocks.push({ type: "image_url", image_url: { url } });
+  });
+  return blocks;
+}
 
 export async function gradeSheets(
-  studentImage: string,
-  keyImage: string,
+  studentImages: string[],
+  keyImages: string[],
 ): Promise<GradeResult> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
@@ -78,10 +95,8 @@ export async function gradeSheets(
         {
           role: "user",
           content: [
-            { type: "text", text: "Student's answer sheet:" },
-            { type: "image_url", image_url: { url: studentImage } },
-            { type: "text", text: "Correction / answer key sheet:" },
-            { type: "image_url", image_url: { url: keyImage } },
+            ...pageBlocks("SET A — student's answer sheet", studentImages),
+            ...pageBlocks("SET B — correction / answer key sheet", keyImages),
             { type: "text", text: USER_INSTRUCTION },
           ],
         },
@@ -95,6 +110,7 @@ export async function gradeSheets(
     if (res.status === 402) throw new Error("NO_CREDITS");
     throw new Error(`AI error ${res.status}: ${body.slice(0, 300)}`);
   }
+
 
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
