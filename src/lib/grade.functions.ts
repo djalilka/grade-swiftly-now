@@ -8,13 +8,13 @@ const dataUrl = z
   .refine((v) => v.startsWith("data:image/"), "Invalid image");
 
 const Input = z.object({
-  studentImage: dataUrl,
-  keyImage: dataUrl,
+  studentImages: z.array(dataUrl).min(1).max(10),
+  keyImages: z.array(dataUrl).min(1).max(10),
 });
 
 export const gradeSubmission = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => Input.parse(input))
   .handler(async ({ data }) => {
     const { gradeSheets } = await import("./grader.server");
-    return gradeSheets(data.studentImage, data.keyImage);
+    return gradeSheets(data.studentImages, data.keyImages);
   });
