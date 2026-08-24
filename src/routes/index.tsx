@@ -3,6 +3,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { gradeSubmission } from "@/lib/grade.functions";
 import { setLastResult, type GradeResult } from "@/lib/result-store";
+import {
+  useRosterStore,
+  saveMark,
+  nextStudentId,
+} from "@/lib/roster-store";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -188,13 +194,40 @@ function UploadField({
 function Index() {
   const grade = useServerFn(gradeSubmission);
   const navigate = useNavigate();
+  const { roster } = useRosterStore();
+  const [classId, setClassId] = useState<string | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(null);
   const [student, setStudent] = useState<Picked[]>([]);
   const [key, setKey] = useState<Picked[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  const selectedClass = roster.find((c) => c.id === classId) ?? null;
+  const selectedStudent =
+    selectedClass?.students.find((s) => s.id === studentId) ?? null;
 
   const ready = student.length > 0 && key.length > 0 && !loading;
+
+  function resetSheets() {
+    setStudent([]);
+    setKey([]);
+    setResult(null);
+    setError(null);
+  }
+
+  function onSaveAndNext() {
+    if (!result || !selectedClass || !selectedStudent) return;
+    saveMark(selectedClass.id, selectedStudent.id, result.score, result.total);
+    const next = nextStudentId(selectedClass.id, selectedStudent.id);
+    resetSheets();
+    setStudentId(next);
+    setSavedMsg(
+      next ? "تم حفظ العلامة — التلميذ التالي" : "تم حفظ العلامة — انتهى القسم",
+    );
+    setTimeout(() => setSavedMsg(null), 2500);
+  }
 
   async function onGrade() {
     if (student.length === 0 || key.length === 0) return;
@@ -227,6 +260,89 @@ function Index() {
     }
   }
 
+  // ---- Step 1: pick class + student ----
+  if (!selectedStudent) {
+    return (
+      <main
+        dir="rtl"
+        lang="ar"
+        className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-8 px-5 py-12"
+      >
+        <header className="text-center">
+          <h1 className="text-4xl font-extrabold tracking-tight text-primary">
+            TashihAI
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            تحديد القسم والتلميذ قبل بدء التصحيح.
+          </p>
+        </header>
+
+        {savedMsg && (
+          <p className="rounded-xl bg-primary/10 px-4 py-3 text-center text-sm font-semibold text-primary">
+            {savedMsg}
+          </p>
+        )}
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-bold text-foreground">القسم</h2>
+          <select
+            value={classId ?? ""}
+            onChange={(e) => {
+              setClassId(e.target.value || null);
+              setStudentId(null);
+            }}
+            className="rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground"
+          >
+            <option value="">اختر القسم…</option>
+            {roster.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </section>
+
+        {selectedClass && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-bold text-foreground">التلميذ</h2>
+            <ul className="flex flex-col gap-2">
+              {selectedClass.students.map((st) => (
+                <li key={st.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetSheets();
+                      setStudentId(st.id);
+                    }}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-right transition-colors hover:border-primary hover:bg-accent"
+                  >
+                    <span className="text-sm font-semibold text-foreground">
+                      {st.name}
+                    </span>
+                    <span
+                      className="text-xs font-bold tabular-nums text-muted-foreground"
+                      dir="ltr"
+                    >
+                      {st.mark ? `${st.mark.score}/${st.mark.total}` : "—"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+              {selectedClass.students.length === 0 && (
+                <li className="rounded-2xl bg-muted/50 px-5 py-6 text-center text-sm text-muted-foreground">
+                  لا يوجد تلاميذ — أضفهم من تبويب الإعدادات.
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
+
+        <div className="h-16" />
+      </main>
+    );
+  }
+
+  // ---- Step 2: grading UI (unchanged) ----
   return (
     <main
       dir="rtl"
@@ -241,6 +357,27 @@ function Index() {
           ارفع أوراق الطالب وأوراق التصحيح، واحصل على العلامة النهائية.
         </p>
       </header>
+
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-3.5">
+        <div className="flex flex-col">
+          <span className="text-xs text-muted-foreground">
+            {selectedClass?.name}
+          </span>
+          <span className="text-sm font-bold text-foreground">
+            {selectedStudent.name}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            resetSheets();
+            setStudentId(null);
+          }}
+          className="rounded-xl bg-secondary px-4 py-2 text-xs font-semibold text-foreground hover:bg-accent"
+        >
+          تغيير
+        </button>
+      </div>
 
       <div className="flex flex-col gap-6">
         <UploadField
@@ -286,8 +423,18 @@ function Index() {
           >
             عرض التفاصيل
           </button>
+          <button
+            type="button"
+            onClick={onSaveAndNext}
+            className="mt-1 w-full rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:brightness-110"
+          >
+            حفظ العلامة للتلميذ والانتقال للتالي
+          </button>
         </section>
       )}
+
+      <div className="h-16" />
     </main>
   );
 }
+
