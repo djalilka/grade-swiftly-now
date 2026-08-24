@@ -3,6 +3,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { gradeSubmission } from "@/lib/grade.functions";
 import { setLastResult, type GradeResult } from "@/lib/result-store";
+import {
+  useRosterStore,
+  saveMark,
+  nextStudentId,
+} from "@/lib/roster-store";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
