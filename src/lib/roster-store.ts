@@ -1,0 +1,185 @@
+import { useEffect, useState } from "react";
+
+export type Mark = {
+  score: number;
+  total: number;
+  at: string;
+};
+
+export type Student = {
+  id: string;
+  name: string;
+  mark?: Mark;
+};
+
+export type ClassRoom = {
+  id: string;
+  name: string;
+  students: Student[];
+};
+
+export type Settings = {
+  geminiApiKey: string;
+  email: string;
+  dark: boolean;
+};
+
+const ROSTER_KEY = "tashihai:roster";
+const SETTINGS_KEY = "tashihai:settings";
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+const DEFAULT_ROSTER: ClassRoom[] = [
+  {
+    id: "c1",
+    name: "السنة الأولى - أ",
+    students: [
+      { id: "s1", name: "أحمد بن علي" },
+      { id: "s2", name: "سارة مرزوق" },
+      { id: "s3", name: "يوسف حداد" },
+      { id: "s4", name: "أمينة بوزيد" },
+    ],
+  },
+  {
+    id: "c2",
+    name: "السنة الثانية - ب",
+    students: [
+      { id: "s5", name: "كريم شريف" },
+      { id: "s6", name: "نور الهدى صالح" },
+      { id: "s7", name: "إلياس منصوري" },
+    ],
+  },
+];
+
+const DEFAULT_SETTINGS: Settings = { geminiApiKey: "", email: "", dark: false };
+
+let roster: ClassRoom[] = DEFAULT_ROSTER;
+let settings: Settings = DEFAULT_SETTINGS;
+let hydrated = false;
+const listeners = new Set<() => void>();
+
+function emit() {
+  listeners.forEach((l) => l());
+}
+
+function hydrate() {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+  try {
+    const r = localStorage.getItem(ROSTER_KEY);
+    if (r) roster = JSON.parse(r) as ClassRoom[];
+    const s = localStorage.getItem(SETTINGS_KEY);
+    if (s) settings = { ...DEFAULT_SETTINGS, ...(JSON.parse(s) as Settings) };
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistRoster() {
+  try {
+    localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function subscribe(fn: () => void) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+export function getRoster() {
+  hydrate();
+  return roster;
+}
+
+export function getSettings() {
+  hydrate();
+  return settings;
+}
+
+export function updateSettings(patch: Partial<Settings>) {
+  settings = { ...getSettings(), ...patch };
+  persistSettings();
+  emit();
+}
+
+export function addClass(name: string) {
+  roster = [...getRoster(), { id: uid(), name, students: [] }];
+  persistRoster();
+  emit();
+}
+
+export function addStudent(classId: string, name: string) {
+  roster = getRoster().map((c) =>
+    c.id === classId
+      ? { ...c, students: [...c.students, { id: uid(), name }] }
+      : c,
+  );
+  persistRoster();
+  emit();
+}
+
+export function removeStudent(classId: string, studentId: string) {
+  roster = getRoster().map((c) =>
+    c.id === classId
+      ? { ...c, students: c.students.filter((s) => s.id !== studentId) }
+      : c,
+  );
+  persistRoster();
+  emit();
+}
+
+export function saveMark(
+  classId: string,
+  studentId: string,
+  score: number,
+  total: number,
+) {
+  roster = getRoster().map((c) =>
+    c.id === classId
+      ? {
+          ...c,
+          students: c.students.map((s) =>
+            s.id === studentId
+              ? { ...s, mark: { score, total, at: new Date().toISOString() } }
+              : s,
+          ),
+        }
+      : c,
+  );
+  persistRoster();
+  emit();
+}
+
+export function nextStudentId(classId: string, studentId: string) {
+  const cls = getRoster().find((c) => c.id === classId);
+  if (!cls) return null;
+  const i = cls.students.findIndex((s) => s.id === studentId);
+  const next = cls.students[i + 1];
+  return next ? next.id : null;
+}
+
+/** Subscribe a component to roster + settings changes (client-only). */
+export function useRosterStore() {
+  const [, force] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    hydrate();
+    setReady(true);
+    return subscribe(() => force((n) => n + 1));
+  }, []);
+
+  return { roster: getRoster(), settings: getSettings(), ready };
+}
