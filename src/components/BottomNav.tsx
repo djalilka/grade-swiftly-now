@@ -3,7 +3,7 @@ import { ClipboardCheck, BarChart3, Settings } from "lucide-react";
 
 const TABS = [
   { to: "/", label: "التصحيح", Icon: ClipboardCheck, exact: false },
-  { to: "/reports", label: "التقارير", Icon: BarChart3, exact: true },
+  { to: "/reports", label: "التقارير والأقسام", Icon: BarChart3, exact: true },
   { to: "/settings", label: "الإعدادات", Icon: Settings, exact: true },
 ] as const;
 
