@@ -126,11 +126,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const { settings, ready } = useRosterStore();
+
+  useEffect(() => {
+    if (!ready || typeof document === "undefined") return;
+    document.documentElement.classList.toggle("dark", settings.dark);
+  }, [ready, settings.dark]);
 
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <BottomNav />
     </QueryClientProvider>
   );
 }
