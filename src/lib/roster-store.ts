@@ -132,6 +132,37 @@ export function addStudent(classId: string, name: string) {
   emit();
 }
 
+export function addStudentsBulk(classId: string, text: string) {
+  const names = text
+    .split(/\r?\n|,/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+  if (names.length === 0) return 0;
+  roster = getRoster().map((c) =>
+    c.id === classId
+      ? {
+          ...c,
+          students: [...c.students, ...names.map((name) => ({ id: uid(), name }))],
+        }
+      : c,
+  );
+  persistRoster();
+  emit();
+  return names.length;
+}
+
+export function renameClass(classId: string, name: string) {
+  roster = getRoster().map((c) => (c.id === classId ? { ...c, name } : c));
+  persistRoster();
+  emit();
+}
+
+export function removeClass(classId: string) {
+  roster = getRoster().filter((c) => c.id !== classId);
+  persistRoster();
+  emit();
+}
+
 export function removeStudent(classId: string, studentId: string) {
   roster = getRoster().map((c) =>
     c.id === classId
