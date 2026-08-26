@@ -260,7 +260,7 @@ function Index() {
     }
   }
 
-  // ---- Step 1: pick class + student ----
+  // ---- Step 1: pick class + student (with inline roster management) ----
   if (!selectedStudent) {
     return (
       <main
@@ -285,26 +285,65 @@ function Index() {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-base font-bold text-foreground">القسم</h2>
-          <select
-            value={classId ?? ""}
-            onChange={(e) => {
-              setClassId(e.target.value || null);
-              setStudentId(null);
-            }}
-            className="rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground"
-          >
-            <option value="">اختر القسم…</option>
-            {roster.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              value={classId ?? ""}
+              onChange={(e) => {
+                setClassId(e.target.value || null);
+                setStudentId(null);
+              }}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground"
+            >
+              <option value="">اختر القسم…</option>
+              {roster.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setModal("class")}
+              className="shrink-0 rounded-xl bg-secondary px-4 text-sm font-bold text-foreground hover:bg-accent"
+            >
+              + إضافة قسم
+            </button>
+          </div>
         </section>
 
-        {selectedClass && (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-base font-bold text-foreground">التلميذ</h2>
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-bold text-foreground">التلميذ</h2>
+          <div className="flex gap-2">
+            <select
+              value={studentId ?? ""}
+              disabled={!selectedClass}
+              onChange={(e) => {
+                resetSheets();
+                setStudentId(e.target.value || null);
+              }}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground disabled:opacity-40"
+            >
+              <option value="">
+                {selectedClass ? "اختر التلميذ…" : "اختر القسم أولًا"}
+              </option>
+              {(selectedClass?.students ?? []).map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                  {st.mark ? ` — ${st.mark.score}/${st.mark.total}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedClass}
+              onClick={() => setModal("student")}
+              className="shrink-0 rounded-xl bg-secondary px-4 text-sm font-bold text-foreground hover:bg-accent disabled:opacity-40"
+            >
+              + إضافة تلميذ
+            </button>
+          </div>
+
+          {selectedClass && (
             <ul className="flex flex-col gap-2">
               {selectedClass.students.map((st) => (
                 <li key={st.id}>
@@ -320,27 +359,46 @@ function Index() {
                       {st.name}
                     </span>
                     <span
-                      className="text-xs font-bold tabular-nums text-muted-foreground"
-                      dir="ltr"
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                        st.mark
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                      dir={st.mark ? "rtl" : undefined}
                     >
-                      {st.mark ? `${st.mark.score}/${st.mark.total}` : "—"}
+                      {st.mark
+                        ? `تم التصحيح (${st.mark.score}/${st.mark.total})`
+                        : "لم يتم التصحيح"}
                     </span>
                   </button>
                 </li>
               ))}
               {selectedClass.students.length === 0 && (
                 <li className="rounded-2xl bg-muted/50 px-5 py-6 text-center text-sm text-muted-foreground">
-                  لا يوجد تلاميذ — أضفهم من تبويب الإعدادات.
+                  لا يوجد تلاميذ — أضفهم بزر «+ إضافة تلميذ».
                 </li>
               )}
             </ul>
-          </section>
+          )}
+        </section>
+
+        {modal && (
+          <RosterModal
+            mode={modal}
+            classId={selectedClass?.id ?? null}
+            onClose={() => setModal(null)}
+            onCreatedClass={(id) => {
+              setClassId(id);
+              setStudentId(null);
+            }}
+          />
         )}
 
         <div className="h-16" />
       </main>
     );
   }
+
 
   // ---- Step 2: grading UI (unchanged) ----
   return (
