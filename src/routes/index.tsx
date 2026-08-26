@@ -309,7 +309,11 @@ function Index() {
     if (!result || !selectedClass || !selectedStudent) return;
     saveMark(selectedClass.id, selectedStudent.id, result.score, result.total);
     const next = nextStudentId(selectedClass.id, selectedStudent.id);
-    resetSheets();
+    // keep the model answer sheets loaded, clear only the student's sheets
+    setStudent([]);
+    setResult(null);
+    setError(null);
+
     setStudentId(next);
     setSavedMsg(
       next ? "تم حفظ العلامة — التلميذ التالي" : "تم حفظ العلامة — انتهى القسم",
