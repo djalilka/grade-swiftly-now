@@ -1,11 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  useRosterStore,
-  updateSettings,
-  addClass,
-  addStudent,
-} from "@/lib/roster-store";
+import { useRosterStore, updateSettings } from "@/lib/roster-store";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -13,13 +8,12 @@ export const Route = createFileRoute("/settings")({
       { title: "الإعدادات — TashihAI" },
       {
         name: "description",
-        content:
-          "إدارة مفتاح Gemini، الوضع الليلي، البريد الإلكتروني، الأقسام والتلاميذ، والمساعدة.",
+        content: "الوضع الليلي، معلومات الحساب، والمساعدة حول تطبيق TashihAI.",
       },
       { property: "og:title", content: "الإعدادات — TashihAI" },
       {
         property: "og:description",
-        content: "مفتاح Gemini، الوضع الليلي، الحساب والدعم.",
+        content: "الوضع الليلي، الحساب والدعم.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -44,15 +38,11 @@ function Section({
 }
 
 function SettingsPage() {
-  const { settings, roster } = useRosterStore();
-  const [key, setKey] = useState(settings.geminiApiKey);
+  const { settings } = useRosterStore();
   const [email, setEmail] = useState(settings.email);
-  const [showKey, setShowKey] = useState(false);
   const [help, setHelp] = useState(false);
+  const [about, setAbout] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
-  const [className, setClassName] = useState("");
-  const [studentClass, setStudentClass] = useState(roster[0]?.id ?? "");
-  const [studentName, setStudentName] = useState("");
 
   function flash(msg: string) {
     setSaved(msg);
@@ -67,43 +57,8 @@ function SettingsPage() {
     >
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-extrabold text-foreground">الإعدادات</h1>
-        <p className="text-sm text-muted-foreground">
-          تخصيص التطبيق وإدارة الأقسام.
-        </p>
+        <p className="text-sm text-muted-foreground">تخصيص التطبيق والحساب.</p>
       </header>
-
-      <Section title="مفتاح Gemini API">
-        <input
-          type={showKey ? "text" : "password"}
-          value={key}
-          dir="ltr"
-          placeholder="AIza..."
-          onChange={(e) => setKey(e.target.value)}
-          className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
-        />
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              updateSettings({ geminiApiKey: key });
-              flash("تم حفظ المفتاح");
-            }}
-            className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110"
-          >
-            حفظ
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowKey((v) => !v)}
-            className="rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
-          >
-            {showKey ? "إخفاء" : "إظهار"}
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          التصحيح يعمل حاليًا بمفتاح مدمج. أضف مفتاحك الخاص لاستعماله لاحقًا.
-        </p>
-      </Section>
 
       <Section title="الوضع الليلي">
         <button
@@ -130,7 +85,7 @@ function SettingsPage() {
         </button>
       </Section>
 
-      <Section title="البريد الإلكتروني">
+      <Section title="معلومات الحساب">
         <input
           type="email"
           value={email}
@@ -151,71 +106,23 @@ function SettingsPage() {
         </button>
       </Section>
 
-      <Section title="الأقسام والتلاميذ">
-        <div className="flex gap-2">
-          <input
-            value={className}
-            placeholder="اسم القسم الجديد"
-            onChange={(e) => setClassName(e.target.value)}
-            className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
-          />
+      <Section title="المساعدة والدعم">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={!className.trim()}
-            onClick={() => {
-              addClass(className.trim());
-              setClassName("");
-              flash("تم إضافة القسم");
-            }}
-            className="rounded-xl bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-accent disabled:opacity-40"
+            onClick={() => setHelp(true)}
+            className="rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
           >
-            إضافة
+            كيف يعمل التطبيق؟
+          </button>
+          <button
+            type="button"
+            onClick={() => setAbout(true)}
+            className="rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            حول التطبيق
           </button>
         </div>
-
-        <div className="flex flex-col gap-2">
-          <select
-            value={studentClass}
-            onChange={(e) => setStudentClass(e.target.value)}
-            className="rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground"
-          >
-            {roster.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={studentName}
-              placeholder="اسم التلميذ"
-              onChange={(e) => setStudentName(e.target.value)}
-              className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
-            />
-            <button
-              type="button"
-              disabled={!studentName.trim() || !studentClass}
-              onClick={() => {
-                addStudent(studentClass, studentName.trim());
-                setStudentName("");
-                flash("تم إضافة التلميذ");
-              }}
-              className="rounded-xl bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-accent disabled:opacity-40"
-            >
-              إضافة
-            </button>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="المساعدة والدعم">
-        <button
-          type="button"
-          onClick={() => setHelp(true)}
-          className="self-start rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
-        >
-          كيف يعمل التطبيق؟
-        </button>
       </Section>
 
       <div className="h-20" />
@@ -239,10 +146,10 @@ function SettingsPage() {
               المساعدة والدعم
             </h2>
             <ol className="mt-4 flex list-decimal flex-col gap-2 pr-5 text-sm leading-relaxed text-muted-foreground">
-              <li>اختر القسم ثم التلميذ من تبويب التصحيح.</li>
+              <li>من تبويب التصحيح: أضف القسم والتلاميذ ثم اخترهم.</li>
               <li>ارفع أوراق إجابة التلميذ وأوراق التصحيح النموذجية.</li>
-              <li>اضغط «تصحيح» ثم احفظ العلامة للتلميذ.</li>
-              <li>راجع النتائج والمعدلات في تبويب التقارير وصدّرها إلى Excel.</li>
+              <li>اضغط «تصحيح» ثم احفظ العلامة وانتقل للتلميذ التالي.</li>
+              <li>راجع الإحصائيات في تبويب التقارير وصدّرها إلى Excel.</li>
             </ol>
             <button
               type="button"
@@ -250,6 +157,32 @@ function SettingsPage() {
               className="mt-6 w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
             >
               فهمت
+            </button>
+          </div>
+        </div>
+      )}
+
+      {about && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-5"
+          onClick={() => setAbout(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-border bg-card p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-foreground">حول التطبيق</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              TashihAI أداة تصحيح آلي لأوراق الإجابة بالعربية والفرنسية. يعتمد
+              على قراءة الصور ومقارنة إجابات التلميذ بورقة التصحيح النموذجية
+              لحساب العلامة النهائية، مع تفصيل لكل سؤال.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAbout(false)}
+              className="mt-6 w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
+            >
+              إغلاق
             </button>
           </div>
         </div>
