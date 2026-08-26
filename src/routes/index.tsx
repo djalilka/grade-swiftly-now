@@ -194,6 +194,89 @@ function UploadField({
   );
 }
 
+function RosterModal({
+  mode,
+  classId,
+  onClose,
+  onCreatedClass,
+}: {
+  mode: "class" | "student";
+  classId: string | null;
+  onClose: () => void;
+  onCreatedClass: (id: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const isClass = mode === "class";
+
+  function submit() {
+    const text = value.trim();
+    if (!text) return;
+    if (isClass) {
+      onCreatedClass(addClass(text));
+    } else if (classId) {
+      addStudentsBulk(classId, text);
+    }
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-5"
+      onClick={onClose}
+    >
+      <div
+        dir="rtl"
+        className="w-full max-w-md rounded-3xl border border-border bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-foreground">
+          {isClass ? "إضافة قسم جديد" : "إضافة تلاميذ"}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {isClass
+            ? "اكتب اسم القسم."
+            : "اسم واحد في كل سطر لإضافة عدة تلاميذ."}
+        </p>
+        {isClass ? (
+          <input
+            autoFocus
+            value={value}
+            placeholder="مثال: السنة الأولى - أ"
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-4 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+          />
+        ) : (
+          <textarea
+            autoFocus
+            rows={5}
+            value={value}
+            placeholder={"أحمد بن علي\nسارة مرزوق"}
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-4 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+          />
+        )}
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            disabled={!value.trim()}
+            onClick={submit}
+            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:brightness-110 disabled:opacity-40"
+          >
+            إضافة
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Index() {
   const grade = useServerFn(gradeSubmission);
   const navigate = useNavigate();
@@ -206,6 +289,8 @@ function Index() {
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [modal, setModal] = useState<"class" | "student" | null>(null);
+
 
   const selectedClass = roster.find((c) => c.id === classId) ?? null;
   const selectedStudent =
