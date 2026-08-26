@@ -7,7 +7,10 @@ import {
   useRosterStore,
   saveMark,
   nextStudentId,
+  addClass,
+  addStudentsBulk,
 } from "@/lib/roster-store";
+
 
 
 export const Route = createFileRoute("/")({
@@ -191,6 +194,89 @@ function UploadField({
   );
 }
 
+function RosterModal({
+  mode,
+  classId,
+  onClose,
+  onCreatedClass,
+}: {
+  mode: "class" | "student";
+  classId: string | null;
+  onClose: () => void;
+  onCreatedClass: (id: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const isClass = mode === "class";
+
+  function submit() {
+    const text = value.trim();
+    if (!text) return;
+    if (isClass) {
+      onCreatedClass(addClass(text));
+    } else if (classId) {
+      addStudentsBulk(classId, text);
+    }
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-5"
+      onClick={onClose}
+    >
+      <div
+        dir="rtl"
+        className="w-full max-w-md rounded-3xl border border-border bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-foreground">
+          {isClass ? "إضافة قسم جديد" : "إضافة تلاميذ"}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {isClass
+            ? "اكتب اسم القسم."
+            : "اسم واحد في كل سطر لإضافة عدة تلاميذ."}
+        </p>
+        {isClass ? (
+          <input
+            autoFocus
+            value={value}
+            placeholder="مثال: السنة الأولى - أ"
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-4 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+          />
+        ) : (
+          <textarea
+            autoFocus
+            rows={5}
+            value={value}
+            placeholder={"أحمد بن علي\nسارة مرزوق"}
+            onChange={(e) => setValue(e.target.value)}
+            className="mt-4 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+          />
+        )}
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            disabled={!value.trim()}
+            onClick={submit}
+            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:brightness-110 disabled:opacity-40"
+          >
+            إضافة
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Index() {
   const grade = useServerFn(gradeSubmission);
   const navigate = useNavigate();
@@ -203,6 +289,8 @@ function Index() {
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [modal, setModal] = useState<"class" | "student" | null>(null);
+
 
   const selectedClass = roster.find((c) => c.id === classId) ?? null;
   const selectedStudent =
@@ -221,7 +309,11 @@ function Index() {
     if (!result || !selectedClass || !selectedStudent) return;
     saveMark(selectedClass.id, selectedStudent.id, result.score, result.total);
     const next = nextStudentId(selectedClass.id, selectedStudent.id);
-    resetSheets();
+    // keep the model answer sheets loaded, clear only the student's sheets
+    setStudent([]);
+    setResult(null);
+    setError(null);
+
     setStudentId(next);
     setSavedMsg(
       next ? "تم حفظ العلامة — التلميذ التالي" : "تم حفظ العلامة — انتهى القسم",
@@ -260,7 +352,7 @@ function Index() {
     }
   }
 
-  // ---- Step 1: pick class + student ----
+  // ---- Step 1: pick class + student (with inline roster management) ----
   if (!selectedStudent) {
     return (
       <main
@@ -285,26 +377,65 @@ function Index() {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-base font-bold text-foreground">القسم</h2>
-          <select
-            value={classId ?? ""}
-            onChange={(e) => {
-              setClassId(e.target.value || null);
-              setStudentId(null);
-            }}
-            className="rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground"
-          >
-            <option value="">اختر القسم…</option>
-            {roster.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              value={classId ?? ""}
+              onChange={(e) => {
+                setClassId(e.target.value || null);
+                setStudentId(null);
+              }}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground"
+            >
+              <option value="">اختر القسم…</option>
+              {roster.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setModal("class")}
+              className="shrink-0 rounded-xl bg-secondary px-4 text-sm font-bold text-foreground hover:bg-accent"
+            >
+              + إضافة قسم
+            </button>
+          </div>
         </section>
 
-        {selectedClass && (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-base font-bold text-foreground">التلميذ</h2>
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-bold text-foreground">التلميذ</h2>
+          <div className="flex gap-2">
+            <select
+              value={studentId ?? ""}
+              disabled={!selectedClass}
+              onChange={(e) => {
+                resetSheets();
+                setStudentId(e.target.value || null);
+              }}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-3.5 text-sm font-semibold text-foreground disabled:opacity-40"
+            >
+              <option value="">
+                {selectedClass ? "اختر التلميذ…" : "اختر القسم أولًا"}
+              </option>
+              {(selectedClass?.students ?? []).map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                  {st.mark ? ` — ${st.mark.score}/${st.mark.total}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedClass}
+              onClick={() => setModal("student")}
+              className="shrink-0 rounded-xl bg-secondary px-4 text-sm font-bold text-foreground hover:bg-accent disabled:opacity-40"
+            >
+              + إضافة تلميذ
+            </button>
+          </div>
+
+          {selectedClass && (
             <ul className="flex flex-col gap-2">
               {selectedClass.students.map((st) => (
                 <li key={st.id}>
@@ -320,27 +451,46 @@ function Index() {
                       {st.name}
                     </span>
                     <span
-                      className="text-xs font-bold tabular-nums text-muted-foreground"
-                      dir="ltr"
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                        st.mark
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                      dir={st.mark ? "rtl" : undefined}
                     >
-                      {st.mark ? `${st.mark.score}/${st.mark.total}` : "—"}
+                      {st.mark
+                        ? `تم التصحيح (${st.mark.score}/${st.mark.total})`
+                        : "لم يتم التصحيح"}
                     </span>
                   </button>
                 </li>
               ))}
               {selectedClass.students.length === 0 && (
                 <li className="rounded-2xl bg-muted/50 px-5 py-6 text-center text-sm text-muted-foreground">
-                  لا يوجد تلاميذ — أضفهم من تبويب الإعدادات.
+                  لا يوجد تلاميذ — أضفهم بزر «+ إضافة تلميذ».
                 </li>
               )}
             </ul>
-          </section>
+          )}
+        </section>
+
+        {modal && (
+          <RosterModal
+            mode={modal}
+            classId={selectedClass?.id ?? null}
+            onClose={() => setModal(null)}
+            onCreatedClass={(id) => {
+              setClassId(id);
+              setStudentId(null);
+            }}
+          />
         )}
 
         <div className="h-16" />
       </main>
     );
   }
+
 
   // ---- Step 2: grading UI (unchanged) ----
   return (

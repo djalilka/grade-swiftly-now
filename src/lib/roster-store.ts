@@ -117,10 +117,13 @@ export function updateSettings(patch: Partial<Settings>) {
 }
 
 export function addClass(name: string) {
-  roster = [...getRoster(), { id: uid(), name, students: [] }];
+  const id = uid();
+  roster = [...getRoster(), { id, name, students: [] }];
   persistRoster();
   emit();
+  return id;
 }
+
 
 export function addStudent(classId: string, name: string) {
   roster = getRoster().map((c) =>
