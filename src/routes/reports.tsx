@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { analyzeClassErrors } from "@/lib/insights.functions";
 import { useRosterStore, type ClassRoom } from "@/lib/roster-store";
 
 export const Route = createFileRoute("/reports")({
@@ -69,6 +71,167 @@ async function exportExcel(cls: ClassRoom) {
   XLSX.writeFile(wb, `كشف-النقاط-${cls.name}.xlsx`);
 }
 
+type Insights = {
+  issues: { question_number: number; headline: string; detail: string }[];
+  recommendations: string[];
+};
+
+function aggregates(cls: ClassRoom | undefined) {
+  const map = new Map<
+    number,
+    {
+      question_number: number;
+      students: number;
+      lost_points: number;
+      possible_points: number;
+      students_with_errors: number;
+      correct_answer?: string;
+    }
+  >();
+  for (const st of cls?.students ?? []) {
+    for (const q of st.mark?.questions ?? []) {
+      const cur = map.get(q.question_number) ?? {
+        question_number: q.question_number,
+        students: 0,
+        lost_points: 0,
+        possible_points: 0,
+        students_with_errors: 0,
+        ...(q.correct_answer ? { correct_answer: q.correct_answer } : {}),
+      };
+      const lost = Math.max(q.points_possible - q.points_earned, 0);
+      cur.students += 1;
+      cur.lost_points += lost;
+      cur.possible_points += q.points_possible;
+      if (lost > 0) cur.students_with_errors += 1;
+      map.set(q.question_number, cur);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.lost_points - a.lost_points);
+}
+
+function CommonErrorsCard({ cls }: { cls: ClassRoom | undefined }) {
+  const analyze = useServerFn(analyzeClassErrors);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<Insights | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const rows = aggregates(cls);
+
+  async function run() {
+    if (!cls || rows.length === 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = (await analyze({
+        data: { className: cls.name, aggregates: rows.slice(0, 40) },
+      })) as Insights;
+      setData(res);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setError(
+        msg.includes("RATE_LIMIT")
+          ? "الخدمة مشغولة حاليًا، حاول بعد قليل."
+          : msg.includes("NO_CREDITS")
+            ? "نفد رصيد الذكاء الاصطناعي."
+            : "تعذّر التحليل، حاول مجددًا.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card px-5 py-5">
+      <h2 className="text-base font-bold text-foreground">
+        كاشف الأخطاء الشائعة والتوصيات
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        تحليل ذكي للأسئلة التي فقد فيها القسم أكبر قدر من النقاط.
+      </p>
+
+      {rows.length === 0 ? (
+        <p className="rounded-xl bg-muted/50 px-4 py-4 text-center text-xs text-muted-foreground">
+          صحّح ورقتين على الأقل مع حفظ العلامات لعرض التحليل.
+        </p>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-2">
+            {rows.slice(0, 3).map((r) => {
+              const pctLost = r.possible_points
+                ? (r.lost_points / r.possible_points) * 100
+                : 0;
+              return (
+                <li
+                  key={r.question_number}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 px-4 py-3 text-sm"
+                >
+                  <span className="font-semibold text-foreground">
+                    السؤال {r.question_number}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {r.students_with_errors}/{r.students} تلميذ أخطأ —{" "}
+                    <span className="font-bold text-warning" dir="ltr">
+                      {pctLost.toFixed(0)}%
+                    </span>{" "}
+                    من النقاط ضائعة
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void run()}
+            className="flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+          >
+            {loading && (
+              <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            )}
+            {loading ? "جارٍ التحليل…" : "تحليل بالذكاء الاصطناعي"}
+          </button>
+        </>
+      )}
+
+      {error && (
+        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-center text-xs text-destructive">
+          {error}
+        </p>
+      )}
+
+      {data && (
+        <div className="flex flex-col gap-3">
+          {data.issues.map((it) => (
+            <div
+              key={`${it.question_number}-${it.headline}`}
+              className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3"
+            >
+              <p className="text-sm font-bold text-foreground">
+                {it.headline}
+              </p>
+              {it.detail && (
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {it.detail}
+                </p>
+              )}
+            </div>
+          ))}
+          {data.recommendations.length > 0 && (
+            <ul className="flex flex-col gap-2 rounded-xl bg-muted/50 px-4 py-3">
+              {data.recommendations.map((r) => (
+                <li key={r} className="text-xs leading-relaxed text-foreground">
+                  • {r}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ReportsPage() {
   const { roster, ready } = useRosterStore();
   const [classId, setClassId] = useState<string | null>(null);
@@ -128,6 +291,8 @@ function ReportsPage() {
           </div>
         ))}
       </div>
+
+      <CommonErrorsCard cls={cls} />
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full text-sm">
