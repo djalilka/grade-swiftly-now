@@ -1,6 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getLastResult, type GradeResult, type QuestionResult } from "@/lib/result-store";
+import {
+  getLastResult,
+  updateLastResult,
+  type GradeResult,
+  type QuestionResult,
+} from "@/lib/result-store";
 
 export const Route = createFileRoute("/results")({
   head: () => ({
@@ -50,7 +55,17 @@ function StatusBadge({
   );
 }
 
-function QuestionCard({ question }: { question: QuestionResult }) {
+function QuestionCard({
+  question,
+  onChange,
+}: {
+  question: QuestionResult;
+  onChange: (next: QuestionResult) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [answer, setAnswer] = useState(question.student_answer);
+  const [points, setPoints] = useState(String(question.points_earned));
+
   const full = question.points_earned === question.points_possible;
   const zero = question.points_earned === 0;
   const accent = full
@@ -58,6 +73,19 @@ function QuestionCard({ question }: { question: QuestionResult }) {
     : zero
       ? "border-r-destructive"
       : "border-r-warning";
+
+  function save() {
+    const p = Number(points);
+    onChange({
+      ...question,
+      student_answer: answer,
+      points_earned: Number.isFinite(p)
+        ? Math.min(Math.max(p, 0), question.points_possible)
+        : question.points_earned,
+      low_confidence: false,
+    });
+    setEditing(false);
+  }
 
   return (
     <article
@@ -72,6 +100,15 @@ function QuestionCard({ question }: { question: QuestionResult }) {
           possible={question.points_possible}
         />
       </div>
+
+      {question.low_confidence && (
+        <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-xs leading-relaxed text-warning">
+          ⚠️ تم التعرف بتنبيه: {question.confidence_note || question.student_answer || "نص غير واضح"}
+          <span className="block text-[11px] text-muted-foreground">
+            يُنصح بالتحقق اليدوي وتعديل الإجابة أو النقطة.
+          </span>
+        </div>
+      )}
 
       <dl className="mt-4 flex flex-col gap-3 text-sm">
         <div className="flex flex-col gap-1">
@@ -101,6 +138,55 @@ function QuestionCard({ question }: { question: QuestionResult }) {
         <p className="mt-4 rounded-xl bg-muted/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
           {question.reasoning}
         </p>
+      )}
+
+      {editing ? (
+        <div className="mt-4 flex flex-col gap-2">
+          <input
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder="إجابة الطالب"
+            className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground"
+          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="0.5"
+              min={0}
+              max={question.points_possible}
+              value={points}
+              onChange={(e) => setPoints(e.target.value)}
+              dir="ltr"
+              className="w-24 rounded-xl border border-border bg-background px-3 py-2.5 text-sm tabular-nums text-foreground"
+            />
+            <button
+              type="button"
+              onClick={save}
+              className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110"
+            >
+              حفظ التعديل
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent"
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setAnswer(question.student_answer);
+            setPoints(String(question.points_earned));
+            setEditing(true);
+          }}
+          className="mt-4 rounded-xl bg-secondary px-4 py-2 text-xs font-semibold text-foreground hover:bg-accent"
+        >
+          تعديل يدوي
+        </button>
       )}
     </article>
   );
@@ -152,8 +238,17 @@ function ResultsPage() {
           <h1 className="text-xl font-extrabold text-foreground">
             تفاصيل التصحيح
           </h1>
-          {result.questions.map((q) => (
-            <QuestionCard key={q.question_number} question={q} />
+          {result.questions.map((q, i) => (
+            <QuestionCard
+              key={q.question_number}
+              question={q}
+              onChange={(next) => {
+                const questions = result.questions.map((old, j) =>
+                  j === i ? next : old,
+                );
+                setResult(updateLastResult(questions));
+              }}
+            />
           ))}
         </section>
       )}

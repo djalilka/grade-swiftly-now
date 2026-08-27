@@ -9,6 +9,8 @@ import {
   nextStudentId,
   addClass,
   addStudentsBulk,
+  saveTemplate,
+  removeTemplate,
 } from "@/lib/roster-store";
 
 
@@ -41,6 +43,18 @@ function readFile(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("read_error"));
     reader.readAsDataURL(file);
   });
+}
+
+async function dataUrlToPicked(url: string, index: number): Promise<Picked> {
+  const blob = await (await fetch(url)).blob();
+  const file = new File([blob], `template-${index + 1}.png`, {
+    type: blob.type || "image/png",
+  });
+  return {
+    id: `tpl-${index}-${Math.random().toString(36).slice(2)}`,
+    file,
+    url,
+  };
 }
 
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -194,6 +208,115 @@ function UploadField({
   );
 }
 
+function ImportModal({
+  classId,
+  onClose,
+}: {
+  classId: string;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function readSheet(file: File) {
+    try {
+      setStatus("جارٍ قراءة الملف…");
+      const XLSX = await import("xlsx");
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]!];
+      const rows = sheet
+        ? (XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][])
+        : [];
+      const names = rows
+        .map((r) => (r ?? []).map((c) => String(c ?? "").trim()).find(Boolean))
+        .filter((n): n is string => !!n)
+        .filter((n) => !/^(الاسم|اللقب|nom|name|n°|رقم)$/i.test(n));
+      if (names.length === 0) {
+        setStatus("لم يتم العثور على أسماء في الملف.");
+        return;
+      }
+      setText((prev) => (prev ? prev + "\n" : "") + names.join("\n"));
+      setStatus(`تم استخراج ${names.length} اسمًا — راجعها ثم أضف.`);
+    } catch {
+      setStatus("تعذّرت قراءة الملف. تأكد أنه بصيغة xlsx أو csv.");
+    }
+  }
+
+  function submit() {
+    const n = addStudentsBulk(classId, text);
+    if (n) onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-5"
+      onClick={onClose}
+    >
+      <div
+        dir="rtl"
+        className="w-full max-w-md rounded-3xl border border-border bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-foreground">استيراد سريع للتلاميذ</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          ارفع ملف Excel أو CSV، أو الصق قائمة الأسماء مباشرة (اسم في كل سطر).
+        </p>
+
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="mt-4 w-full rounded-xl border-2 border-dashed border-border bg-background px-4 py-5 text-sm font-semibold text-foreground hover:border-primary hover:bg-accent"
+        >
+          اختيار ملف .xlsx أو .csv
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void readSheet(f);
+          }}
+        />
+
+        <textarea
+          rows={6}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={"أحمد بن علي\nسارة مرزوق"}
+          className="mt-3 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+        />
+
+        {status && (
+          <p className="mt-2 text-xs font-semibold text-primary">{status}</p>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            disabled={!text.trim()}
+            onClick={submit}
+            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:brightness-110 disabled:opacity-40"
+          >
+            إضافة التلاميذ
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RosterModal({
   mode,
   classId,
@@ -280,7 +403,7 @@ function RosterModal({
 function Index() {
   const grade = useServerFn(gradeSubmission);
   const navigate = useNavigate();
-  const { roster } = useRosterStore();
+  const { roster, templates } = useRosterStore();
   const [classId, setClassId] = useState<string | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
   const [student, setStudent] = useState<Picked[]>([]);
@@ -289,7 +412,11 @@ function Index() {
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [modal, setModal] = useState<"class" | "student" | null>(null);
+  const [modal, setModal] = useState<"class" | "student" | "import" | null>(
+    null,
+  );
+  const [templateTitle, setTemplateTitle] = useState("");
+  const [templateMsg, setTemplateMsg] = useState<string | null>(null);
 
 
   const selectedClass = roster.find((c) => c.id === classId) ?? null;
@@ -307,7 +434,18 @@ function Index() {
 
   function onSaveAndNext() {
     if (!result || !selectedClass || !selectedStudent) return;
-    saveMark(selectedClass.id, selectedStudent.id, result.score, result.total);
+    saveMark(
+      selectedClass.id,
+      selectedStudent.id,
+      result.score,
+      result.total,
+      result.questions.map((q) => ({
+        question_number: q.question_number,
+        points_earned: q.points_earned,
+        points_possible: q.points_possible,
+        correct_answer: q.correct_answer,
+      })),
+    );
     const next = nextStudentId(selectedClass.id, selectedStudent.id);
     // keep the model answer sheets loaded, clear only the student's sheets
     setStudent([]);
@@ -319,6 +457,25 @@ function Index() {
       next ? "تم حفظ العلامة — التلميذ التالي" : "تم حفظ العلامة — انتهى القسم",
     );
     setTimeout(() => setSavedMsg(null), 2500);
+  }
+
+  async function onSaveTemplate() {
+    const title = templateTitle.trim();
+    if (!title || key.length === 0) return;
+    const images = await Promise.all(key.map((p) => readFile(p.file)));
+    saveTemplate(title, images);
+    setTemplateTitle("");
+    setTemplateMsg("تم حفظ النموذج في المكتبة.");
+    setTimeout(() => setTemplateMsg(null), 2500);
+  }
+
+  async function onLoadTemplate(id: string) {
+    const tpl = templates.find((t) => t.id === id);
+    if (!tpl) return;
+    const picked = await Promise.all(tpl.images.map(dataUrlToPicked));
+    setKey(picked);
+    setTemplateMsg(`تم تحميل: ${tpl.title}`);
+    setTimeout(() => setTemplateMsg(null), 2500);
   }
 
   async function onGrade() {
@@ -433,6 +590,14 @@ function Index() {
             >
               + إضافة تلميذ
             </button>
+            <button
+              type="button"
+              disabled={!selectedClass}
+              onClick={() => setModal("import")}
+              className="shrink-0 rounded-xl bg-secondary px-4 text-sm font-bold text-foreground hover:bg-accent disabled:opacity-40"
+            >
+              استيراد سريع
+            </button>
           </div>
 
           {selectedClass && (
@@ -474,7 +639,14 @@ function Index() {
           )}
         </section>
 
-        {modal && (
+        {modal === "import" && selectedClass && (
+          <ImportModal
+            classId={selectedClass.id}
+            onClose={() => setModal(null)}
+          />
+        )}
+
+        {modal && modal !== "import" && (
           <RosterModal
             mode={modal}
             classId={selectedClass?.id ?? null}
@@ -540,6 +712,75 @@ function Index() {
           items={key}
           onChange={setKey}
         />
+
+        <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card px-5 py-4">
+          <h3 className="text-sm font-bold text-foreground">
+            مكتبة الاختبارات الخاصة
+          </h3>
+
+          <div className="flex gap-2">
+            <input
+              value={templateTitle}
+              onChange={(e) => setTemplateTitle(e.target.value)}
+              placeholder="عنوان الاختبار — مثال: اختبار الفصل الأول - 4 متوسط"
+              className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+            />
+            <button
+              type="button"
+              disabled={!templateTitle.trim() || key.length === 0}
+              onClick={() => void onSaveTemplate()}
+              className="shrink-0 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground hover:brightness-110 disabled:opacity-40"
+            >
+              حفظ هذا النموذج للمستقبل
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) void onLoadTemplate(e.target.value);
+              }}
+              className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground"
+            >
+              <option value="">
+                {templates.length
+                  ? "اختر من النماذج المحفوظة…"
+                  : "لا توجد نماذج محفوظة بعد"}
+              </option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title} ({t.images.length} صفحة)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {templates.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {templates.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-[11px] font-semibold text-foreground"
+                >
+                  {t.title}
+                  <button
+                    type="button"
+                    onClick={() => removeTemplate(t.id)}
+                    aria-label={`حذف ${t.title}`}
+                    className="text-destructive hover:underline"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {templateMsg && (
+            <p className="text-xs font-semibold text-primary">{templateMsg}</p>
+          )}
+        </section>
       </div>
 
       <button
