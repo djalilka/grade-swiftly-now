@@ -5,8 +5,6 @@ export type QuestionResult = {
   points_earned: number;
   points_possible: number;
   reasoning: string;
-  low_confidence?: boolean;
-  confidence_note?: string;
 };
 
 export type GradeResult = {
@@ -26,19 +24,6 @@ export function setLastResult(result: GradeResult) {
   } catch {
     /* ignore */
   }
-}
-
-export function updateLastResult(questions: QuestionResult[]): GradeResult {
-  const score =
-    Math.round(questions.reduce((s, q) => s + (q.points_earned || 0), 0) * 100) /
-    100;
-  const total =
-    Math.round(
-      questions.reduce((s, q) => s + (q.points_possible || 0), 0) * 100,
-    ) / 100;
-  const next: GradeResult = { score, total, questions };
-  setLastResult(next);
-  return next;
 }
 
 export function getLastResult(): GradeResult | null {

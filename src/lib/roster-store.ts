@@ -1,23 +1,8 @@
 import { useEffect, useState } from "react";
 
-export type MarkQuestion = {
-  question_number: number;
-  points_earned: number;
-  points_possible: number;
-  correct_answer?: string;
-};
-
 export type Mark = {
   score: number;
   total: number;
-  at: string;
-  questions?: MarkQuestion[];
-};
-
-export type KeyTemplate = {
-  id: string;
-  title: string;
-  images: string[];
   at: string;
 };
 
@@ -41,7 +26,6 @@ export type Settings = {
 
 const ROSTER_KEY = "tashihai:roster";
 const SETTINGS_KEY = "tashihai:settings";
-const TEMPLATES_KEY = "tashihai:templates";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -73,7 +57,6 @@ const DEFAULT_SETTINGS: Settings = { geminiApiKey: "", email: "", dark: false };
 
 let roster: ClassRoom[] = DEFAULT_ROSTER;
 let settings: Settings = DEFAULT_SETTINGS;
-let templates: KeyTemplate[] = [];
 let hydrated = false;
 const listeners = new Set<() => void>();
 
@@ -89,8 +72,6 @@ function hydrate() {
     if (r) roster = JSON.parse(r) as ClassRoom[];
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) settings = { ...DEFAULT_SETTINGS, ...(JSON.parse(s) as Settings) };
-    const t = localStorage.getItem(TEMPLATES_KEY);
-    if (t) templates = JSON.parse(t) as KeyTemplate[];
   } catch {
     /* ignore */
   }
@@ -110,33 +91,6 @@ function persistSettings() {
   } catch {
     /* ignore */
   }
-}
-
-function persistTemplates() {
-  try {
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
-  } catch {
-    /* ignore */
-  }
-}
-
-export function getTemplates() {
-  hydrate();
-  return templates;
-}
-
-export function saveTemplate(title: string, images: string[]) {
-  const id = uid();
-  templates = [{ id, title, images, at: new Date().toISOString() }, ...getTemplates()];
-  persistTemplates();
-  emit();
-  return id;
-}
-
-export function removeTemplate(id: string) {
-  templates = getTemplates().filter((t) => t.id !== id);
-  persistTemplates();
-  emit();
 }
 
 export function subscribe(fn: () => void) {
@@ -227,7 +181,6 @@ export function saveMark(
   studentId: string,
   score: number,
   total: number,
-  questions?: MarkQuestion[],
 ) {
   roster = getRoster().map((c) =>
     c.id === classId
@@ -235,15 +188,7 @@ export function saveMark(
           ...c,
           students: c.students.map((s) =>
             s.id === studentId
-              ? {
-                  ...s,
-                  mark: {
-                    score,
-                    total,
-                    at: new Date().toISOString(),
-                    ...(questions ? { questions } : {}),
-                  },
-                }
+              ? { ...s, mark: { score, total, at: new Date().toISOString() } }
               : s,
           ),
         }
@@ -272,10 +217,5 @@ export function useRosterStore() {
     return subscribe(() => force((n) => n + 1));
   }, []);
 
-  return {
-    roster: getRoster(),
-    settings: getSettings(),
-    templates: getTemplates(),
-    ready,
-  };
+  return { roster: getRoster(), settings: getSettings(), ready };
 }

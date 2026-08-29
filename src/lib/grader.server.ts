@@ -17,8 +17,6 @@ export type GradeQuestion = {
   points_earned: number;
   points_possible: number;
   reasoning: string;
-  low_confidence: boolean;
-  confidence_note: string;
 };
 
 export type GradeResult = {
@@ -50,12 +48,11 @@ Grading rules (apply identically every time):
 - Award partial points only when the answer key explicitly allows partial credit or the answer is partially complete; otherwise award full or zero.
 - Never invent questions that are not on the key. Never skip a question on the key.
 - points_earned must never exceed points_possible.
-- OCR CONFIDENCE: if the student's handwriting for a question is hard to read, or a number/symbol is ambiguous (e.g. could be 3 or 8, 1 or 7), set "low_confidence": true and write in "confidence_note" a short Arabic note describing the doubt. Otherwise set "low_confidence": false and "confidence_note": "".
 
 If the sheets are too blurry, empty, or unreadable, respond with exactly {"error": "unreadable"}.
 
 Otherwise respond with ONLY this JSON object, no markdown fences, no explanation:
-{"questions":[{"question_number":1,"correct_answer":"...","student_answer":"...","points_earned":2,"points_possible":2,"reasoning":"...","low_confidence":false,"confidence_note":""}],"total_score":5,"total_possible":6}`;
+{"questions":[{"question_number":1,"correct_answer":"...","student_answer":"...","points_earned":2,"points_possible":2,"reasoning":"..."}],"total_score":5,"total_possible":6}`;
 
 const USER_INSTRUCTION =
   "Grade the student's sheet (SET A, all pages) against the key (SET B, all pages). Follow STEP 1 to STEP 4 and return only the JSON object.";
@@ -149,8 +146,6 @@ export async function gradeSheets(
         points_earned: earned,
         points_possible: possible,
         reasoning: String(o["reasoning"] ?? ""),
-        low_confidence: o["low_confidence"] === true,
-        confidence_note: String(o["confidence_note"] ?? ""),
       };
     })
     .filter((q) => q.points_possible > 0);
