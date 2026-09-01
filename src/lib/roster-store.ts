@@ -285,5 +285,11 @@ export function useRosterStore() {
     return subscribe(() => force((n) => n + 1));
   }, []);
 
-  return { roster: getRoster(), settings: getSettings(), ready };
+  return {
+    roster: getRoster(),
+    settings: getSettings(),
+    rubrics: getRubrics(),
+    ready,
+  };
 }
+
