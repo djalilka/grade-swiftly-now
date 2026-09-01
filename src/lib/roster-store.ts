@@ -1,9 +1,19 @@
 import { useEffect, useState } from "react";
 
+export type MarkQuestion = {
+  question_number: number;
+  correct_answer: string;
+  student_answer: string;
+  points_earned: number;
+  points_possible: number;
+  reasoning: string;
+};
+
 export type Mark = {
   score: number;
   total: number;
   at: string;
+  questions?: MarkQuestion[];
 };
 
 export type Student = {
@@ -24,12 +34,21 @@ export type Settings = {
   dark: boolean;
 };
 
+export type Rubric = {
+  id: string;
+  title: string;
+  images: string[];
+  at: string;
+};
+
 const ROSTER_KEY = "tashihai:roster";
 const SETTINGS_KEY = "tashihai:settings";
+const RUBRIC_KEY = "tashihai:rubrics";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+
 
 const DEFAULT_ROSTER: ClassRoom[] = [
   {
