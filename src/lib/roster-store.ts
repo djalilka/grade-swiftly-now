@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS: Settings = { geminiApiKey: "", email: "", dark: false };
 
 let roster: ClassRoom[] = DEFAULT_ROSTER;
 let settings: Settings = DEFAULT_SETTINGS;
+let rubrics: Rubric[] = [];
 let hydrated = false;
 const listeners = new Set<() => void>();
 
@@ -91,10 +92,48 @@ function hydrate() {
     if (r) roster = JSON.parse(r) as ClassRoom[];
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) settings = { ...DEFAULT_SETTINGS, ...(JSON.parse(s) as Settings) };
+    const k = localStorage.getItem(RUBRIC_KEY);
+    if (k) rubrics = JSON.parse(k) as Rubric[];
   } catch {
     /* ignore */
   }
 }
+
+function persistRubrics() {
+  try {
+    localStorage.setItem(RUBRIC_KEY, JSON.stringify(rubrics));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getRubrics() {
+  hydrate();
+  return rubrics;
+}
+
+export function saveRubric(title: string, images: string[]) {
+  const next: Rubric = {
+    id: uid(),
+    title,
+    images,
+    at: new Date().toISOString(),
+  };
+  const prev = rubrics;
+  rubrics = [next, ...getRubrics()];
+  const ok = persistRubrics();
+  if (!ok) rubrics = prev;
+  emit();
+  return ok;
+}
+
+export function removeRubric(id: string) {
+  rubrics = getRubrics().filter((r) => r.id !== id);
+  persistRubrics();
+  emit();
+}
+
 
 function persistRoster() {
   try {
