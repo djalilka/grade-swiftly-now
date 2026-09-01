@@ -18,3 +18,14 @@ export const gradeSubmission = createServerFn({ method: "POST" })
     const { gradeSheets } = await import("./grader.server");
     return gradeSheets(data.studentImages, data.keyImages);
   });
+
+const NamesInput = z.object({ images: z.array(dataUrl).min(1).max(5) });
+
+export const extractStudentNames = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => NamesInput.parse(input))
+  .handler(async ({ data }) => {
+    const { extractNamesFromImages } = await import("./names.server");
+    const names = await extractNamesFromImages(data.images);
+    return { names };
+  });
+
