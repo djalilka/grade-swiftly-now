@@ -239,6 +239,7 @@ export function saveMark(
   studentId: string,
   score: number,
   total: number,
+  questions?: MarkQuestion[],
 ) {
   roster = getRoster().map((c) =>
     c.id === classId
@@ -246,7 +247,15 @@ export function saveMark(
           ...c,
           students: c.students.map((s) =>
             s.id === studentId
-              ? { ...s, mark: { score, total, at: new Date().toISOString() } }
+              ? {
+                  ...s,
+                  mark: {
+                    score,
+                    total,
+                    at: new Date().toISOString(),
+                    ...(questions ? { questions } : {}),
+                  },
+                }
               : s,
           ),
         }
@@ -255,6 +264,7 @@ export function saveMark(
   persistRoster();
   emit();
 }
+
 
 export function nextStudentId(classId: string, studentId: string) {
   const cls = getRoster().find((c) => c.id === classId);
