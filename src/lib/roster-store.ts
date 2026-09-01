@@ -1,9 +1,19 @@
 import { useEffect, useState } from "react";
 
+export type MarkQuestion = {
+  question_number: number;
+  correct_answer: string;
+  student_answer: string;
+  points_earned: number;
+  points_possible: number;
+  reasoning: string;
+};
+
 export type Mark = {
   score: number;
   total: number;
   at: string;
+  questions?: MarkQuestion[];
 };
 
 export type Student = {
@@ -24,12 +34,21 @@ export type Settings = {
   dark: boolean;
 };
 
+export type Rubric = {
+  id: string;
+  title: string;
+  images: string[];
+  at: string;
+};
+
 const ROSTER_KEY = "tashihai:roster";
 const SETTINGS_KEY = "tashihai:settings";
+const RUBRIC_KEY = "tashihai:rubrics";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+
 
 const DEFAULT_ROSTER: ClassRoom[] = [
   {
@@ -57,6 +76,7 @@ const DEFAULT_SETTINGS: Settings = { geminiApiKey: "", email: "", dark: false };
 
 let roster: ClassRoom[] = DEFAULT_ROSTER;
 let settings: Settings = DEFAULT_SETTINGS;
+let rubrics: Rubric[] = [];
 let hydrated = false;
 const listeners = new Set<() => void>();
 
@@ -72,10 +92,48 @@ function hydrate() {
     if (r) roster = JSON.parse(r) as ClassRoom[];
     const s = localStorage.getItem(SETTINGS_KEY);
     if (s) settings = { ...DEFAULT_SETTINGS, ...(JSON.parse(s) as Settings) };
+    const k = localStorage.getItem(RUBRIC_KEY);
+    if (k) rubrics = JSON.parse(k) as Rubric[];
   } catch {
     /* ignore */
   }
 }
+
+function persistRubrics() {
+  try {
+    localStorage.setItem(RUBRIC_KEY, JSON.stringify(rubrics));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getRubrics() {
+  hydrate();
+  return rubrics;
+}
+
+export function saveRubric(title: string, images: string[]) {
+  const next: Rubric = {
+    id: uid(),
+    title,
+    images,
+    at: new Date().toISOString(),
+  };
+  const prev = rubrics;
+  rubrics = [next, ...getRubrics()];
+  const ok = persistRubrics();
+  if (!ok) rubrics = prev;
+  emit();
+  return ok;
+}
+
+export function removeRubric(id: string) {
+  rubrics = getRubrics().filter((r) => r.id !== id);
+  persistRubrics();
+  emit();
+}
+
 
 function persistRoster() {
   try {
@@ -181,6 +239,7 @@ export function saveMark(
   studentId: string,
   score: number,
   total: number,
+  questions?: MarkQuestion[],
 ) {
   roster = getRoster().map((c) =>
     c.id === classId
@@ -188,7 +247,15 @@ export function saveMark(
           ...c,
           students: c.students.map((s) =>
             s.id === studentId
-              ? { ...s, mark: { score, total, at: new Date().toISOString() } }
+              ? {
+                  ...s,
+                  mark: {
+                    score,
+                    total,
+                    at: new Date().toISOString(),
+                    ...(questions ? { questions } : {}),
+                  },
+                }
               : s,
           ),
         }
@@ -197,6 +264,7 @@ export function saveMark(
   persistRoster();
   emit();
 }
+
 
 export function nextStudentId(classId: string, studentId: string) {
   const cls = getRoster().find((c) => c.id === classId);
@@ -217,5 +285,11 @@ export function useRosterStore() {
     return subscribe(() => force((n) => n + 1));
   }, []);
 
-  return { roster: getRoster(), settings: getSettings(), ready };
+  return {
+    roster: getRoster(),
+    settings: getSettings(),
+    rubrics: getRubrics(),
+    ready,
+  };
 }
+

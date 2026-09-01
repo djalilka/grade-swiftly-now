@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
-import { gradeSubmission } from "@/lib/grade.functions";
+import { gradeSubmission, extractStudentNames } from "@/lib/grade.functions";
 import { setLastResult, type GradeResult } from "@/lib/result-store";
 import {
   useRosterStore,
@@ -9,9 +9,9 @@ import {
   nextStudentId,
   addClass,
   addStudentsBulk,
+  saveRubric,
+  removeRubric,
 } from "@/lib/roster-store";
-
-
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -46,7 +46,13 @@ function readFile(file: File): Promise<string> {
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILES = 10;
 
-type Picked = { id: string; file: File; url: string };
+type Picked = { id: string; url: string; file?: File; dataUrl?: string };
+
+function pickedToDataUrl(p: Picked): Promise<string> {
+  if (p.dataUrl) return Promise.resolve(p.dataUrl);
+  if (p.file) return readFile(p.file);
+  return Promise.reject(new Error("empty_page"));
+}
 
 function UploadField({
   label,
@@ -90,7 +96,7 @@ function UploadField({
   function remove(index: number) {
     const next = [...items];
     const [it] = next.splice(index, 1);
-    if (it) URL.revokeObjectURL(it.url);
+    if (it?.file) URL.revokeObjectURL(it.url);
     onChange(next);
   }
 
@@ -277,10 +283,368 @@ function RosterModal({
   );
 }
 
+/* ---------------- Quick import (Excel / paste / image) ---------------- */
+
+type ImportTab = "file" | "paste" | "image";
+
+function QuickImportModal({
+  classId,
+  onClose,
+  onImported,
+}: {
+  classId: string;
+  onClose: () => void;
+  onImported: (count: number) => void;
+}) {
+  const extract = useServerFn(extractStudentNames);
+  const [tab, setTab] = useState<ImportTab>("file");
+  const [names, setNames] = useState<string[]>([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const imgRef = useRef<HTMLInputElement>(null);
+
+  const tabs: { id: ImportTab; label: string }[] = [
+    { id: "file", label: "ملف Excel/CSV" },
+    { id: "paste", label: "لصق نصي" },
+    { id: "image", label: "صورة القائمة" },
+  ];
+
+  async function onSheet(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const XLSX = await import("xlsx");
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const ws = sheetName ? wb.Sheets[sheetName] : undefined;
+      if (!ws) throw new Error("empty");
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
+      const found: string[] = [];
+      for (const row of rows) {
+        for (const cell of row ?? []) {
+          const v = String(cell ?? "").trim();
+          if (!v || /^\d+([.,]\d+)?$/.test(v)) continue;
+          found.push(v);
+          break;
+        }
+      }
+      const clean = found.filter(
+        (n) => !/^(الاسم|اسم|nom|name|التلميذ|n°)$/i.test(n),
+      );
+      if (clean.length === 0) throw new Error("empty");
+      setNames(clean);
+    } catch {
+      setErr("تعذّرت قراءة الملف. تأكد من أنه ملف Excel أو CSV صالح.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onImage(files: FileList | null) {
+    const list = Array.from(files ?? []).filter((f) =>
+      ACCEPTED.includes(f.type),
+    );
+    if (list.length === 0) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const images = await Promise.all(list.slice(0, 5).map(readFile));
+      const res = (await extract({ data: { images } })) as { names: string[] };
+      if (!res.names.length) throw new Error("empty");
+      setNames(res.names);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setErr(
+        msg.includes("RATE_LIMIT")
+          ? "الخدمة مشغولة حاليًا، حاول بعد قليل."
+          : msg.includes("NO_CREDITS")
+            ? "نفد رصيد الذكاء الاصطناعي."
+            : "تعذّرت قراءة الأسماء من الصورة، جرّب صورة أوضح.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applyPaste() {
+    const list = text
+      .split(/\r?\n|,/)
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (list.length === 0) {
+      setErr("لا توجد أسماء.");
+      return;
+    }
+    setErr(null);
+    setNames(list);
+  }
+
+  function confirmImport() {
+    const added = addStudentsBulk(classId, names.join("\n"));
+    onImported(added);
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-5"
+      onClick={onClose}
+    >
+      <div
+        dir="rtl"
+        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-foreground">استيراد سريع</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          استورد قائمة التلاميذ دفعة واحدة.
+        </p>
+
+        <div className="mt-4 flex gap-1 rounded-xl bg-secondary p-1">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTab(t.id);
+                setErr(null);
+              }}
+              className={`flex-1 rounded-lg px-2 py-2 text-[11px] font-bold transition-colors ${
+                tab === t.id
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4">
+          {tab === "file" && (
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="rounded-2xl border-2 border-dashed border-border bg-background px-5 py-8 text-center text-sm font-semibold text-foreground hover:border-primary hover:bg-accent"
+              >
+                اختر ملف .xlsx أو .csv
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  void onSheet(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                تُقرأ الأسماء من العمود الأول لكل سطر.
+              </p>
+            </div>
+          )}
+
+          {tab === "paste" && (
+            <div className="flex flex-col gap-3">
+              <textarea
+                rows={6}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={"أحمد بن علي\nسارة مرزوق"}
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+              />
+              <button
+                type="button"
+                onClick={applyPaste}
+                className="self-start rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold text-foreground hover:bg-accent"
+              >
+                تحليل الأسماء
+              </button>
+            </div>
+          )}
+
+          {tab === "image" && (
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => imgRef.current?.click()}
+                className="rounded-2xl border-2 border-dashed border-border bg-background px-5 py-8 text-center text-sm font-semibold text-foreground hover:border-primary hover:bg-accent"
+              >
+                {busy ? "جارٍ قراءة الصورة…" : "اختر صورة قائمة التلاميذ"}
+              </button>
+              <input
+                ref={imgRef}
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  void onImage(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {err && (
+          <p className="mt-3 rounded-xl bg-destructive/10 px-4 py-3 text-center text-xs text-destructive">
+            {err}
+          </p>
+        )}
+
+        {names.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-border bg-background p-3">
+            <p className="text-xs font-bold text-foreground">
+              {names.length} اسم جاهز للاستيراد
+            </p>
+            <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-muted-foreground">
+              {names.map((n, i) => (
+                <li key={`${n}-${i}`} className="py-0.5">
+                  {i + 1}. {n}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            disabled={names.length === 0 || busy}
+            onClick={confirmImport}
+            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:brightness-110 disabled:opacity-40"
+          >
+            استيراد
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Breakdown card with manual verification ---------------- */
+
+function QuestionCard({
+  q,
+  onChange,
+}: {
+  q: GradeResult["questions"][number];
+  onChange: (next: GradeResult["questions"][number]) => void;
+}) {
+  const full = q.points_earned >= q.points_possible;
+  const zero = q.points_earned <= 0;
+  const needsCheck = !full;
+
+  const tone = full
+    ? "border-primary/40 bg-primary/5"
+    : zero
+      ? "border-destructive/40 bg-destructive/5"
+      : "border-warning/50 bg-warning/10";
+
+  const badge = full
+    ? { text: "صحيحة", cls: "bg-primary/10 text-primary" }
+    : zero
+      ? { text: "خاطئة", cls: "bg-destructive/10 text-destructive" }
+      : { text: "جزئية", cls: "bg-warning/20 text-warning-foreground" };
+
+  return (
+    <li className={`rounded-2xl border px-4 py-4 ${tone}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-bold text-foreground">
+          السؤال {q.question_number}
+        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${badge.cls}`}
+          >
+            {badge.text}
+          </span>
+          <span
+            className="text-sm font-black tabular-nums text-foreground"
+            dir="ltr"
+          >
+            {q.points_earned}/{q.points_possible}
+          </span>
+        </div>
+      </div>
+
+      <dl className="mt-3 flex flex-col gap-1.5 text-xs">
+        <div className="flex gap-2">
+          <dt className="shrink-0 text-muted-foreground">الإجابة النموذجية:</dt>
+          <dd className="font-semibold text-foreground">{q.correct_answer}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="shrink-0 text-muted-foreground">إجابة التلميذ:</dt>
+          <dd className="font-semibold text-foreground">
+            {q.student_answer || "—"}
+          </dd>
+        </div>
+      </dl>
+
+      {needsCheck ? (
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-warning/50 bg-warning/10 p-3">
+          <span className="text-[11px] font-bold text-warning-foreground">
+            ⚠️ تحقق يدوي — يمكنك تعديل العلامة والملاحظة
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={q.points_possible}
+              step="0.25"
+              dir="ltr"
+              value={q.points_earned}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                onChange({
+                  ...q,
+                  points_earned: Number.isFinite(v)
+                    ? Math.min(Math.max(v, 0), q.points_possible)
+                    : 0,
+                });
+              }}
+              className="w-20 rounded-lg border border-border bg-background px-2 py-1.5 text-sm font-bold tabular-nums text-foreground"
+            />
+            <span className="text-xs text-muted-foreground">
+              من {q.points_possible}
+            </span>
+          </div>
+          <textarea
+            rows={2}
+            value={q.reasoning}
+            onChange={(e) => onChange({ ...q, reasoning: e.target.value })}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground"
+          />
+        </div>
+      ) : (
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          {q.reasoning}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/* ---------------- Page ---------------- */
+
 function Index() {
   const grade = useServerFn(gradeSubmission);
   const navigate = useNavigate();
-  const { roster } = useRosterStore();
+  const { roster, rubrics } = useRosterStore();
   const [classId, setClassId] = useState<string | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
   const [student, setStudent] = useState<Picked[]>([]);
@@ -289,14 +653,23 @@ function Index() {
   const [result, setResult] = useState<GradeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [modal, setModal] = useState<"class" | "student" | null>(null);
-
+  const [modal, setModal] = useState<"class" | "student" | "import" | null>(
+    null,
+  );
+  const [rubricTitle, setRubricTitle] = useState("");
+  const [rubricMsg, setRubricMsg] = useState<string | null>(null);
+  const [loadedRubricId, setLoadedRubricId] = useState("");
 
   const selectedClass = roster.find((c) => c.id === classId) ?? null;
   const selectedStudent =
     selectedClass?.students.find((s) => s.id === studentId) ?? null;
 
   const ready = student.length > 0 && key.length > 0 && !loading;
+
+  function flash(setter: (v: string | null) => void, msg: string) {
+    setter(msg);
+    setTimeout(() => setter(null), 2500);
+  }
 
   function resetSheets() {
     setStudent([]);
@@ -307,18 +680,68 @@ function Index() {
 
   function onSaveAndNext() {
     if (!result || !selectedClass || !selectedStudent) return;
-    saveMark(selectedClass.id, selectedStudent.id, result.score, result.total);
+    saveMark(
+      selectedClass.id,
+      selectedStudent.id,
+      result.score,
+      result.total,
+      result.questions,
+    );
     const next = nextStudentId(selectedClass.id, selectedStudent.id);
     // keep the model answer sheets loaded, clear only the student's sheets
     setStudent([]);
     setResult(null);
     setError(null);
-
     setStudentId(next);
-    setSavedMsg(
+    flash(
+      setSavedMsg,
       next ? "تم حفظ العلامة — التلميذ التالي" : "تم حفظ العلامة — انتهى القسم",
     );
-    setTimeout(() => setSavedMsg(null), 2500);
+  }
+
+  async function onSaveRubric() {
+    const title = rubricTitle.trim();
+    if (!title || key.length === 0) return;
+    try {
+      const images = await Promise.all(key.map(pickedToDataUrl));
+      const ok = saveRubric(title, images);
+      flash(
+        setRubricMsg,
+        ok ? "تم حفظ النموذج في المكتبة" : "الذاكرة ممتلئة — احذف نماذج قديمة",
+      );
+      if (ok) setRubricTitle("");
+    } catch {
+      flash(setRubricMsg, "تعذّر حفظ النموذج");
+    }
+  }
+
+  function onLoadRubric(id: string) {
+    setLoadedRubricId(id);
+    const r = rubrics.find((x) => x.id === id);
+    if (!r) return;
+    setKey(
+      r.images.map((dataUrl, i) => ({
+        id: `${r.id}-${i}`,
+        url: dataUrl,
+        dataUrl,
+      })),
+    );
+    setResult(null);
+    flash(setRubricMsg, `تم تحميل «${r.title}»`);
+  }
+
+  function updateQuestion(i: number, q: GradeResult["questions"][number]) {
+    setResult((prev) => {
+      if (!prev) return prev;
+      const questions = prev.questions.map((old, idx) => (idx === i ? q : old));
+      const score =
+        Math.round(
+          questions.reduce((s, x) => s + (x.points_earned || 0), 0) * 100,
+        ) / 100;
+      const next = { ...prev, questions, score };
+      setLastResult(next);
+      return next;
+    });
   }
 
   async function onGrade() {
@@ -328,8 +751,8 @@ function Index() {
     setResult(null);
     try {
       const [studentImages, keyImages] = await Promise.all([
-        Promise.all(student.map((p) => readFile(p.file))),
-        Promise.all(key.map((p) => readFile(p.file))),
+        Promise.all(student.map(pickedToDataUrl)),
+        Promise.all(key.map(pickedToDataUrl)),
       ]);
       const res = (await grade({
         data: { studentImages, keyImages },
@@ -435,6 +858,15 @@ function Index() {
             </button>
           </div>
 
+          <button
+            type="button"
+            disabled={!selectedClass}
+            onClick={() => setModal("import")}
+            className="self-start rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-primary hover:bg-accent disabled:opacity-40"
+          >
+            استيراد سريع
+          </button>
+
           {selectedClass && (
             <ul className="flex flex-col gap-2">
               {selectedClass.students.map((st) => (
@@ -456,7 +888,6 @@ function Index() {
                           ? "bg-primary/10 text-primary"
                           : "bg-muted text-muted-foreground"
                       }`}
-                      dir={st.mark ? "rtl" : undefined}
                     >
                       {st.mark
                         ? `تم التصحيح (${st.mark.score}/${st.mark.total})`
@@ -474,7 +905,7 @@ function Index() {
           )}
         </section>
 
-        {modal && (
+        {(modal === "class" || modal === "student") && (
           <RosterModal
             mode={modal}
             classId={selectedClass?.id ?? null}
@@ -486,13 +917,20 @@ function Index() {
           />
         )}
 
+        {modal === "import" && selectedClass && (
+          <QuickImportModal
+            classId={selectedClass.id}
+            onClose={() => setModal(null)}
+            onImported={(n) => flash(setSavedMsg, `تم استيراد ${n} تلميذًا`)}
+          />
+        )}
+
         <div className="h-16" />
       </main>
     );
   }
 
-
-  // ---- Step 2: grading UI (unchanged) ----
+  // ---- Step 2: grading UI ----
   return (
     <main
       dir="rtl"
@@ -535,11 +973,64 @@ function Index() {
           items={student}
           onChange={setStudent}
         />
-        <UploadField
-          label="أوراق التصحيح النموذجية"
-          items={key}
-          onChange={setKey}
-        />
+
+        <div className="flex flex-col gap-3">
+          <UploadField
+            label="أوراق التصحيح النموذجية"
+            items={key}
+            onChange={setKey}
+          />
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card px-4 py-4">
+            <h3 className="text-sm font-bold text-foreground">
+              مكتبة الاختبارات
+            </h3>
+            <div className="flex gap-2">
+              <input
+                value={rubricTitle}
+                onChange={(e) => setRubricTitle(e.target.value)}
+                placeholder="عنوان الاختبار"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+              />
+              <button
+                type="button"
+                disabled={!rubricTitle.trim() || key.length === 0}
+                onClick={() => void onSaveRubric()}
+                className="shrink-0 rounded-xl bg-secondary px-3 text-xs font-bold text-foreground hover:bg-accent disabled:opacity-40"
+              >
+                حفظ هذا النموذج
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={loadedRubricId}
+                onChange={(e) => onLoadRubric(e.target.value)}
+                className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-semibold text-foreground"
+              >
+                <option value="">اختبار محفوظ…</option>
+                {rubrics.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={!loadedRubricId}
+                onClick={() => {
+                  removeRubric(loadedRubricId);
+                  setLoadedRubricId("");
+                }}
+                className="shrink-0 rounded-xl bg-secondary px-3 text-xs font-semibold text-destructive hover:bg-accent disabled:opacity-40"
+              >
+                حذف
+              </button>
+            </div>
+            {rubricMsg && (
+              <p className="text-xs font-semibold text-primary">{rubricMsg}</p>
+            )}
+          </div>
+        </div>
       </div>
 
       <button
@@ -578,8 +1069,25 @@ function Index() {
             onClick={onSaveAndNext}
             className="mt-1 w-full rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:brightness-110"
           >
-            حفظ العلامة للتلميذ والانتقال للتالي
+            حفظ العلامة والانتقال للتلميذ التالي
           </button>
+        </section>
+      )}
+
+      {result && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-bold text-foreground">
+            تفصيل الأسئلة
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {result.questions.map((q, i) => (
+              <QuestionCard
+                key={`${q.question_number}-${i}`}
+                q={q}
+                onChange={(next) => updateQuestion(i, next)}
+              />
+            ))}
+          </ul>
         </section>
       )}
 
@@ -587,4 +1095,3 @@ function Index() {
     </main>
   );
 }
-
