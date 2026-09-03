@@ -69,11 +69,29 @@ async function exportExcel(cls: ClassRoom) {
   XLSX.writeFile(wb, `كشف-النقاط-${cls.name}.xlsx`);
 }
 
+function commonErrorsOf(cls: ClassRoom | undefined) {
+  const graded = (cls?.students ?? []).filter((st) => st.mark?.questions?.length);
+  const map = new Map<number, { graded: number; missed: number }>();
+  for (const st of graded) {
+    for (const q of st.mark!.questions!) {
+      const e = map.get(q.question_number) ?? { graded: 0, missed: 0 };
+      e.graded += 1;
+      if (q.points_earned < q.points_possible) e.missed += 1;
+      map.set(q.question_number, e);
+    }
+  }
+  return [...map.entries()]
+    .map(([q, e]) => ({ q, ...e, rate: (e.missed / e.graded) * 100 }))
+    .filter((e) => e.rate > 50)
+    .sort((a, b) => b.rate - a.rate || a.q - b.q);
+}
+
 function ReportsPage() {
   const { roster, ready } = useRosterStore();
   const [classId, setClassId] = useState<string | null>(null);
   const cls = roster.find((c) => c.id === (classId ?? roster[0]?.id));
   const s = stats(cls);
+  const commonErrors = commonErrorsOf(cls);
 
   return (
     <main
@@ -173,6 +191,34 @@ function ReportsPage() {
           </tbody>
         </table>
       </div>
+
+      <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+        <h2 className="text-base font-bold text-foreground">
+          ⚠️ كاشف الأخطاء الشائعة
+        </h2>
+        {commonErrors.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            لا توجد أخطاء شائعة بعد. صحّح أوراق التلاميذ لعرض التحليل.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {commonErrors.map((e) => (
+              <li
+                key={e.q}
+                className="flex items-center justify-between gap-3 rounded-xl bg-destructive/10 px-3 py-2.5"
+              >
+                <span className="text-sm font-semibold text-foreground">
+                  السؤال {e.q}
+                </span>
+                <span className="text-xs font-bold text-destructive">
+                  {e.missed} من {e.graded} تلميذًا أخطأوا (
+                  {e.rate.toFixed(0)}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <button
         type="button"

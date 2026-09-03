@@ -11,7 +11,10 @@ import {
   addStudentsBulk,
   saveRubric,
   removeRubric,
+  removeClass,
+  removeStudent,
 } from "@/lib/roster-store";
+import { Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -823,6 +826,27 @@ function Index() {
             >
               + إضافة قسم
             </button>
+            {selectedClass && (
+              <button
+                type="button"
+                aria-label="حذف القسم"
+                title="حذف القسم"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `حذف القسم «${selectedClass.name}» وكل تلاميذه؟`,
+                    )
+                  ) {
+                    removeClass(selectedClass.id);
+                    setClassId(null);
+                    setStudentId(null);
+                  }
+                }}
+                className="shrink-0 rounded-xl border border-destructive/40 bg-destructive/10 px-3 text-destructive hover:bg-destructive/20"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </div>
         </section>
 
@@ -870,7 +894,7 @@ function Index() {
           {selectedClass && (
             <ul className="flex flex-col gap-2">
               {selectedClass.students.map((st) => (
-                <li key={st.id}>
+                <li key={st.id} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -893,6 +917,20 @@ function Index() {
                         ? `تم التصحيح (${st.mark.score}/${st.mark.total})`
                         : "لم يتم التصحيح"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`حذف ${st.name}`}
+                    title="حذف التلميذ"
+                    onClick={() => {
+                      if (window.confirm(`حذف التلميذ «${st.name}»؟`)) {
+                        removeStudent(selectedClass.id, st.id);
+                        if (studentId === st.id) setStudentId(null);
+                      }
+                    }}
+                    className="shrink-0 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-3 text-destructive hover:bg-destructive/20"
+                  >
+                    <Trash2 size={18} />
                   </button>
                 </li>
               ))}
