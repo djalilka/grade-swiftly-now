@@ -69,11 +69,29 @@ async function exportExcel(cls: ClassRoom) {
   XLSX.writeFile(wb, `كشف-النقاط-${cls.name}.xlsx`);
 }
 
+function commonErrorsOf(cls: ClassRoom | undefined) {
+  const graded = (cls?.students ?? []).filter((st) => st.mark?.questions?.length);
+  const map = new Map<number, { graded: number; missed: number }>();
+  for (const st of graded) {
+    for (const q of st.mark!.questions!) {
+      const e = map.get(q.question_number) ?? { graded: 0, missed: 0 };
+      e.graded += 1;
+      if (q.points_earned < q.points_possible) e.missed += 1;
+      map.set(q.question_number, e);
+    }
+  }
+  return [...map.entries()]
+    .map(([q, e]) => ({ q, ...e, rate: (e.missed / e.graded) * 100 }))
+    .filter((e) => e.rate > 50)
+    .sort((a, b) => b.rate - a.rate || a.q - b.q);
+}
+
 function ReportsPage() {
   const { roster, ready } = useRosterStore();
   const [classId, setClassId] = useState<string | null>(null);
   const cls = roster.find((c) => c.id === (classId ?? roster[0]?.id));
   const s = stats(cls);
+  const commonErrors = commonErrorsOf(cls);
 
   return (
     <main
