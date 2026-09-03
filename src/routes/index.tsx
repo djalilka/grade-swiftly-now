@@ -894,7 +894,7 @@ function Index() {
           {selectedClass && (
             <ul className="flex flex-col gap-2">
               {selectedClass.students.map((st) => (
-                <li key={st.id}>
+                <li key={st.id} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
