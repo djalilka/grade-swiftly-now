@@ -880,6 +880,23 @@ function Index() {
             >
               + إضافة تلميذ
             </button>
+            {selectedClass && selectedStudent && (
+              <button
+                type="button"
+                aria-label="حذف التلميذ"
+                title="حذف التلميذ"
+                onClick={() => {
+                  if (window.confirm(`حذف التلميذ «${selectedStudent.name}»؟`)) {
+                    removeStudent(selectedClass.id, selectedStudent.id);
+                    setStudentId(null);
+                    resetSheets();
+                  }
+                }}
+                className="shrink-0 rounded-xl border border-destructive/40 bg-destructive/10 px-3 text-destructive hover:bg-destructive/20"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </div>
 
           <button
