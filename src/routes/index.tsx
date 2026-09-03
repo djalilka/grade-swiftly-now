@@ -826,6 +826,27 @@ function Index() {
             >
               + إضافة قسم
             </button>
+            {selectedClass && (
+              <button
+                type="button"
+                aria-label="حذف القسم"
+                title="حذف القسم"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `حذف القسم «${selectedClass.name}» وكل تلاميذه؟`,
+                    )
+                  ) {
+                    removeClass(selectedClass.id);
+                    setClassId(null);
+                    setStudentId(null);
+                  }
+                }}
+                className="shrink-0 rounded-xl border border-destructive/40 bg-destructive/10 px-3 text-destructive hover:bg-destructive/20"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </div>
         </section>
 
