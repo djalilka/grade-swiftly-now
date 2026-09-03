@@ -50,27 +50,7 @@ function uid() {
 }
 
 
-const DEFAULT_ROSTER: ClassRoom[] = [
-  {
-    id: "c1",
-    name: "السنة الأولى - أ",
-    students: [
-      { id: "s1", name: "أحمد بن علي" },
-      { id: "s2", name: "سارة مرزوق" },
-      { id: "s3", name: "يوسف حداد" },
-      { id: "s4", name: "أمينة بوزيد" },
-    ],
-  },
-  {
-    id: "c2",
-    name: "السنة الثانية - ب",
-    students: [
-      { id: "s5", name: "كريم شريف" },
-      { id: "s6", name: "نور الهدى صالح" },
-      { id: "s7", name: "إلياس منصوري" },
-    ],
-  },
-];
+const DEFAULT_ROSTER: ClassRoom[] = [];
 
 const DEFAULT_SETTINGS: Settings = { geminiApiKey: "", email: "", dark: false };
 
