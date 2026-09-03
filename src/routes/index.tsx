@@ -11,7 +11,10 @@ import {
   addStudentsBulk,
   saveRubric,
   removeRubric,
+  removeClass,
+  removeStudent,
 } from "@/lib/roster-store";
+import { Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
