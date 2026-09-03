@@ -918,6 +918,20 @@ function Index() {
                         : "لم يتم التصحيح"}
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    aria-label={`حذف ${st.name}`}
+                    title="حذف التلميذ"
+                    onClick={() => {
+                      if (window.confirm(`حذف التلميذ «${st.name}»؟`)) {
+                        removeStudent(selectedClass.id, st.id);
+                        if (studentId === st.id) setStudentId(null);
+                      }
+                    }}
+                    className="shrink-0 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-3 text-destructive hover:bg-destructive/20"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </li>
               ))}
               {selectedClass.students.length === 0 && (
