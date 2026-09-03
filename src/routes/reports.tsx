@@ -174,6 +174,34 @@ function ReportsPage() {
         </table>
       </div>
 
+      <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+        <h2 className="text-base font-bold text-foreground">
+          ⚠️ كاشف الأخطاء الشائعة
+        </h2>
+        {commonErrors.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            لا توجد أخطاء شائعة بعد. صحّح أوراق التلاميذ لعرض التحليل.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {commonErrors.map((e) => (
+              <li
+                key={e.q}
+                className="flex items-center justify-between gap-3 rounded-xl bg-destructive/10 px-3 py-2.5"
+              >
+                <span className="text-sm font-semibold text-foreground">
+                  السؤال {e.q}
+                </span>
+                <span className="text-xs font-bold text-destructive">
+                  {e.missed} من {e.graded} تلميذًا أخطأوا (
+                  {e.rate.toFixed(0)}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <button
         type="button"
         disabled={!cls}
