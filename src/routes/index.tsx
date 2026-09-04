@@ -13,6 +13,7 @@ import {
   removeRubric,
   removeClass,
   removeStudent,
+  takePendingRubric,
 } from "@/lib/roster-store";
 import { Trash2 } from "lucide-react";
 
