@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { ClipboardCheck, BarChart3, Settings } from "lucide-react";
+import { ClipboardCheck, BarChart3, FolderOpen, Settings } from "lucide-react";
 
 const TABS = [
   { to: "/", label: "التصحيح", Icon: ClipboardCheck, exact: false },
   { to: "/reports", label: "التقارير", Icon: BarChart3, exact: true },
+  { to: "/files", label: "ملفاتي", Icon: FolderOpen, exact: true },
   { to: "/settings", label: "الإعدادات", Icon: Settings, exact: true },
 ] as const;
 
