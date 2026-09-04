@@ -670,6 +670,14 @@ function Index() {
 
   const ready = student.length > 0 && key.length > 0 && !loading;
 
+  // Auto-load a rubric chosen from "ملفاتي" → "استخدامه فوراً في التصحيح"
+  useEffect(() => {
+    if (rubrics.length === 0) return;
+    const id = takePendingRubric();
+    if (id) onLoadRubric(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rubrics.length]);
+
   function flash(setter: (v: string | null) => void, msg: string) {
     setter(msg);
     setTimeout(() => setter(null), 2500);
