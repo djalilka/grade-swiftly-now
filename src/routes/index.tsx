@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gradeSubmission, extractStudentNames } from "@/lib/grade.functions";
 import { setLastResult, type GradeResult } from "@/lib/result-store";
 import {
