@@ -246,6 +246,100 @@ export function saveMark(
 }
 
 
+/* ---------------- Documents vault + teacher notes ---------------- */
+
+export type TeacherDoc = {
+  id: string;
+  title: string;
+  kind: "pdf" | "image";
+  dataUrl: string;
+  at: string;
+};
+
+const DOCS_KEY = "tashihai:docs";
+const NOTES_KEY = "tashihai:notes";
+const PENDING_KEY = "tashihai:pending-rubric";
+
+let docs: TeacherDoc[] = [];
+let notes: Record<string, string> = {};
+let docsHydrated = false;
+
+function hydrateDocs() {
+  if (docsHydrated || typeof window === "undefined") return;
+  docsHydrated = true;
+  try {
+    const d = localStorage.getItem(DOCS_KEY);
+    if (d) docs = JSON.parse(d) as TeacherDoc[];
+    const n = localStorage.getItem(NOTES_KEY);
+    if (n) notes = JSON.parse(n) as Record<string, string>;
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getDocs() {
+  hydrateDocs();
+  return docs;
+}
+
+export function addDoc(title: string, kind: "pdf" | "image", dataUrl: string) {
+  const prev = getDocs();
+  docs = [{ id: uid(), title, kind, dataUrl, at: new Date().toISOString() }, ...prev];
+  try {
+    localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+  } catch {
+    docs = prev;
+    emit();
+    return false;
+  }
+  emit();
+  return true;
+}
+
+export function removeDoc(id: string) {
+  docs = getDocs().filter((d) => d.id !== id);
+  try {
+    localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+  } catch {
+    /* ignore */
+  }
+  emit();
+}
+
+export function getNotes() {
+  hydrateDocs();
+  return notes;
+}
+
+export function setNote(classId: string, text: string) {
+  notes = { ...getNotes(), [classId]: text };
+  try {
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+  } catch {
+    /* ignore */
+  }
+  emit();
+}
+
+/** Cross-tab hand-off: "use this rubric now in grading". */
+export function setPendingRubric(id: string) {
+  try {
+    sessionStorage.setItem(PENDING_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function takePendingRubric() {
+  try {
+    const id = sessionStorage.getItem(PENDING_KEY);
+    if (id) sessionStorage.removeItem(PENDING_KEY);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export function nextStudentId(classId: string, studentId: string) {
   const cls = getRoster().find((c) => c.id === classId);
   if (!cls) return null;
@@ -261,6 +355,7 @@ export function useRosterStore() {
 
   useEffect(() => {
     hydrate();
+    hydrateDocs();
     setReady(true);
     return subscribe(() => force((n) => n + 1));
   }, []);
@@ -269,6 +364,8 @@ export function useRosterStore() {
     roster: getRoster(),
     settings: getSettings(),
     rubrics: getRubrics(),
+    docs: getDocs(),
+    notes: getNotes(),
     ready,
   };
 }

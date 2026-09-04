@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gradeSubmission, extractStudentNames } from "@/lib/grade.functions";
 import { setLastResult, type GradeResult } from "@/lib/result-store";
 import {
@@ -13,6 +13,7 @@ import {
   removeRubric,
   removeClass,
   removeStudent,
+  takePendingRubric,
 } from "@/lib/roster-store";
 import { Trash2 } from "lucide-react";
 
@@ -668,6 +669,14 @@ function Index() {
     selectedClass?.students.find((s) => s.id === studentId) ?? null;
 
   const ready = student.length > 0 && key.length > 0 && !loading;
+
+  // Auto-load a rubric chosen from "ملفاتي" → "استخدامه فوراً في التصحيح"
+  useEffect(() => {
+    if (rubrics.length === 0) return;
+    const id = takePendingRubric();
+    if (id) onLoadRubric(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rubrics.length]);
 
   function flash(setter: (v: string | null) => void, msg: string) {
     setter(msg);
