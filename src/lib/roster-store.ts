@@ -340,6 +340,56 @@ export function takePendingRubric() {
   }
 }
 
+/* ---------------- Teacher profile / auth ---------------- */
+
+export type UserProfile = {
+  name: string;
+  contact: string;
+  gender: "male" | "female";
+  avatar?: string;
+};
+
+const PROFILE_KEY = "tashihai:profile";
+
+let profile: UserProfile | null = null;
+let profileHydrated = false;
+
+function hydrateProfile() {
+  if (profileHydrated || typeof window === "undefined") return;
+  profileHydrated = true;
+  try {
+    const p = localStorage.getItem(PROFILE_KEY);
+    if (p) profile = JSON.parse(p) as UserProfile;
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getProfile() {
+  hydrateProfile();
+  return profile;
+}
+
+export function saveProfile(next: UserProfile) {
+  profile = next;
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  emit();
+}
+
+export function logout() {
+  profile = null;
+  try {
+    localStorage.removeItem(PROFILE_KEY);
+  } catch {
+    /* ignore */
+  }
+  emit();
+}
+
 export function nextStudentId(classId: string, studentId: string) {
   const cls = getRoster().find((c) => c.id === classId);
   if (!cls) return null;
