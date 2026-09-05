@@ -38,7 +38,7 @@ function Section({
 }
 
 function SettingsPage() {
-  const { settings } = useRosterStore();
+  const { settings, profile } = useRosterStore();
   const [email, setEmail] = useState(settings.email);
   const [help, setHelp] = useState(false);
   const [about, setAbout] = useState(false);
