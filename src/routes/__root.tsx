@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { BottomNav } from "@/components/BottomNav";
+import { AuthGate } from "@/components/AuthGate";
 import { useRosterStore } from "@/lib/roster-store";
 
 function NotFoundComponent() {
@@ -137,9 +138,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <BottomNav />
+      <AuthGate>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <BottomNav />
+      </AuthGate>
     </QueryClientProvider>
   );
 }
