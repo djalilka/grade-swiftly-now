@@ -49,6 +49,19 @@ function SettingsPage() {
   const [help, setHelp] = useState(false);
   const [about, setAbout] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [pName, setPName] = useState(profile?.name ?? "");
+  const [pGender, setPGender] = useState<"male" | "female">(
+    profile?.gender ?? "male",
+  );
+  const [pAvatar, setPAvatar] = useState<string | undefined>(profile?.avatar);
+
+  useEffect(() => {
+    if (!profile) return;
+    setPName(profile.name);
+    setPGender(profile.gender);
+    setPAvatar(profile.avatar);
+    setEmail((e) => e || profile.contact);
+  }, [profile?.name, profile?.gender, profile?.avatar, profile?.contact]);
 
   function flash(msg: string) {
     setSaved(msg);
