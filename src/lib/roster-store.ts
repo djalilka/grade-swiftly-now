@@ -406,6 +406,7 @@ export function useRosterStore() {
   useEffect(() => {
     hydrate();
     hydrateDocs();
+    hydrateProfile();
     setReady(true);
     return subscribe(() => force((n) => n + 1));
   }, []);
@@ -416,6 +417,7 @@ export function useRosterStore() {
     rubrics: getRubrics(),
     docs: getDocs(),
     notes: getNotes(),
+    profile: getProfile(),
     ready,
   };
 }
