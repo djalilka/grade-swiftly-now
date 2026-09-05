@@ -60,6 +60,103 @@ function SettingsPage() {
         <p className="text-sm text-muted-foreground">تخصيص التطبيق والحساب.</p>
       </header>
 
+      {profile && (
+        <div className="flex items-center gap-4 rounded-3xl border border-border bg-card px-5 py-5">
+          <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-muted-foreground ring-2 ring-primary/40">
+            {profile.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={`صورة ${profile.name}`}
+                className="size-full object-cover"
+              />
+            ) : (
+              <UserRound className="size-8" aria-hidden />
+            )}
+          </span>
+          <div className="flex flex-col">
+            <p className="text-xl font-extrabold leading-tight text-foreground">
+              مرحباً بك يا {profile.gender === "female" ? "أستاذة" : "أستاذ"}{" "}
+              {profile.name}
+            </p>
+            <p className="text-sm text-muted-foreground" dir="ltr">
+              {profile.contact}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {profile && (
+        <Section title="الملف الشخصي">
+          <input
+            value={pName}
+            onChange={(e) => setPName(e.target.value)}
+            placeholder="الاسم واللقب"
+            className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+          />
+          <div className="flex gap-2">
+            {(
+              [
+                ["male", "أستاذ"],
+                ["female", "أستاذة"],
+              ] as const
+            ).map(([g, label]) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setPGender(g)}
+                className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${
+                  pGender === g
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="cursor-pointer self-start rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent">
+            تغيير صورة البروفايل
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = () => setPAvatar(String(reader.result));
+                reader.readAsDataURL(f);
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              saveProfile({
+                name: pName.trim() || profile.name,
+                contact: profile.contact,
+                gender: pGender,
+                ...(pAvatar ? { avatar: pAvatar } : {}),
+              });
+              flash("تم تحديث الملف الشخصي");
+            }}
+            className="self-start rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110"
+          >
+            حفظ الملف الشخصي
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm("هل تريد تسجيل الخروج؟")) logout();
+            }}
+            className="self-start rounded-xl border border-destructive px-4 py-2.5 text-sm font-bold text-destructive hover:bg-destructive/10"
+          >
+            تسجيل الخروج
+          </button>
+        </Section>
+      )}
+
+
       <Section title="الوضع الليلي">
         <button
           type="button"
