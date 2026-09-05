@@ -1,6 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useRosterStore, updateSettings } from "@/lib/roster-store";
+import { UserRound } from "lucide-react";
+import {
+  useRosterStore,
+  updateSettings,
+  saveProfile,
+  logout,
+} from "@/lib/roster-store";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
