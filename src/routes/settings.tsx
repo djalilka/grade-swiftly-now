@@ -6,6 +6,7 @@ import {
   updateSettings,
   saveProfile,
   logout,
+  type UserProfile,
 } from "@/lib/roster-store";
 
 export const Route = createFileRoute("/settings")({
@@ -43,6 +44,23 @@ function Section({
   );
 }
 
+function cleanName(name: string) {
+  return name
+    .replace(/^(أستاذة|أستاذ)\s*/i, "")
+    .replace(/\s+(أستاذة|أستاذ)$/i, "")
+    .trim();
+}
+
+function welcomeLine(profile: UserProfile) {
+  const name = cleanName(profile.name);
+  const raw = profile.name.trim();
+  if (/أستاذ|أستاذة/.test(raw)) {
+    return `مرحباً بك ${raw}`;
+  }
+  const title = profile.gender === "female" ? "أستاذة" : "أستاذ";
+  return `مرحباً بك يا ${title} ${name}`;
+}
+
 function SettingsPage() {
   const { settings, profile } = useRosterStore();
   const [email, setEmail] = useState(settings.email);
@@ -57,7 +75,7 @@ function SettingsPage() {
 
   useEffect(() => {
     if (!profile) return;
-    setPName(profile.name);
+    setPName(cleanName(profile.name));
     setPGender(profile.gender);
     setPAvatar(profile.avatar);
     setEmail((e) => e || profile.contact);
@@ -85,7 +103,7 @@ function SettingsPage() {
             {profile.avatar ? (
               <img
                 src={profile.avatar}
-                alt={`صورة ${profile.name}`}
+                alt={`صورة ${cleanName(profile.name)}`}
                 className="size-full object-cover"
               />
             ) : (
@@ -94,8 +112,7 @@ function SettingsPage() {
           </span>
           <div className="flex flex-col">
             <p className="text-xl font-extrabold leading-tight text-foreground">
-              مرحباً بك يا {profile.gender === "female" ? "أستاذة" : "أستاذ"}{" "}
-              {profile.name}
+              {welcomeLine(profile)}
             </p>
             <p className="text-sm text-muted-foreground" dir="ltr">
               {profile.contact}
@@ -106,32 +123,38 @@ function SettingsPage() {
 
       {profile && (
         <Section title="الملف الشخصي">
-          <input
-            value={pName}
-            onChange={(e) => setPName(e.target.value)}
-            placeholder="الاسم واللقب"
-            className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
-          />
-          <div className="flex gap-2">
-            {(
-              [
-                ["male", "أستاذ"],
-                ["female", "أستاذة"],
-              ] as const
-            ).map(([g, label]) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setPGender(g)}
-                className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${
-                  pGender === g
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-foreground"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            الاسم واللقب
+            <input
+              value={pName}
+              onChange={(e) => setPName(e.target.value)}
+              placeholder="مثال: محمد علي"
+              className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
+            />
+          </label>
+          <div className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            الجنس
+            <div className="flex gap-2">
+              {(
+                [
+                  ["male", "أستاذ"],
+                  ["female", "أستاذة"],
+                ] as const
+              ).map(([g, label]) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setPGender(g)}
+                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${
+                    pGender === g
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <label className="cursor-pointer self-start rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent">
             تغيير صورة البروفايل
@@ -152,7 +175,7 @@ function SettingsPage() {
             type="button"
             onClick={() => {
               saveProfile({
-                name: pName.trim() || profile.name,
+                name: cleanName(pName.trim()) || cleanName(profile.name),
                 contact: profile.contact,
                 gender: pGender,
                 ...(pAvatar ? { avatar: pAvatar } : {}),
@@ -174,7 +197,6 @@ function SettingsPage() {
           </button>
         </Section>
       )}
-
 
       <Section title="الوضع الليلي">
         <button

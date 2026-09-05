@@ -1,9 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { UserRound } from "lucide-react";
 import { useRosterStore, saveProfile, type UserProfile } from "@/lib/roster-store";
 
 type Mode = "signup" | "login";
+
+const GOOGLE_CLIENT_ID =
+  (import.meta.env && (import.meta.env.VITE_GOOGLE_CLIENT_ID as string)) || "";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { profile, ready } = useRosterStore();
@@ -11,6 +14,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!ready) return null;
   if (profile) return <>{children}</>;
   return <AuthScreen />;
+}
+
+function cleanName(name: string) {
+  return name
+    .replace(/^(أستاذة|أستاذ)\s*/i, "")
+    .replace(/\s+(أستاذة|أستاذ)$/i, "")
+    .trim();
+}
+
+function decodeGoogleJwt(token: string) {
+  try {
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(base64);
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function AuthScreen() {
@@ -22,6 +42,74 @@ function AuthScreen() {
   const [gender, setGender] = useState<"male" | "female">("male");
   const [avatar, setAvatar] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [gisReady, setGisReady] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!GOOGLE_CLIENT_ID) return;
+    if ((window as unknown as Record<string, unknown>).google) {
+      initGis();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = initGis;
+    script.onerror = () => setGisReady(false);
+    document.body.appendChild(script);
+    return () => {
+      script.remove();
+    };
+  }, []);
+
+  function initGis() {
+    const g = (window as unknown as { google?: GoogleIdentityServices }).google;
+    if (!g?.accounts?.id || !googleBtnRef.current) return;
+    g.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    g.accounts.id.renderButton(googleBtnRef.current, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      width: googleBtnRef.current.clientWidth,
+      text: "signup_with",
+      shape: "pill",
+      locale: "ar",
+    });
+    setGisReady(true);
+  }
+
+  function handleGoogleCredential(response: { credential?: string }) {
+    const token = response.credential;
+    if (!token) {
+      setError("لم نتمكن من استرداد معلومات Google. حاول مرة أخرى.");
+      return;
+    }
+    const payload = decodeGoogleJwt(token);
+    const fullName =
+      typeof payload?.name === "string" && payload.name.trim()
+        ? payload.name.trim()
+        : typeof payload?.given_name === "string" && payload.given_name.trim()
+          ? payload.given_name.trim()
+          : "مستخدم جديد";
+    const email =
+      typeof payload?.email === "string" ? payload.email.trim() : "";
+
+    const next: UserProfile = {
+      name: cleanName(fullName),
+      contact: email || contact.trim() || "google",
+      gender,
+      ...(avatar ? { avatar } : {}),
+    };
+    saveProfile(next);
+    navigate({ to: "/settings" });
+  }
 
   function onPick(file: File | null) {
     if (!file) return;
@@ -37,22 +125,12 @@ function AuthScreen() {
       return;
     }
     const next: UserProfile = {
-      name: name.trim(),
+      name: cleanName(name.trim()),
       contact: contact.trim(),
       gender,
       ...(avatar ? { avatar } : {}),
     };
     saveProfile(next);
-    navigate({ to: "/settings" });
-  }
-
-  function googleSignIn() {
-    saveProfile({
-      name: name.trim() || "أستاذ",
-      contact: contact.trim() || "google",
-      gender,
-      ...(avatar ? { avatar } : {}),
-    });
     navigate({ to: "/settings" });
   }
 
@@ -191,7 +269,9 @@ function AuthScreen() {
           </>
         )}
 
-        {error && <p className="text-sm font-semibold text-destructive">{error}</p>}
+        {error && (
+          <p className="text-sm font-semibold text-destructive">{error}</p>
+        )}
 
         <button
           type="submit"
@@ -200,15 +280,35 @@ function AuthScreen() {
           {mode === "signup" ? "إنشاء الحساب" : "دخول"}
         </button>
 
-        <button
-          type="button"
-          onClick={googleSignIn}
-          className="flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-3 text-sm font-bold text-foreground hover:bg-accent"
-        >
-          <span className="text-base font-black text-primary">G</span>
-          تسجيل بواسطة Google
-        </button>
+        {GOOGLE_CLIENT_ID ? (
+          <div
+            ref={googleBtnRef}
+            className="flex min-h-[40px] items-center justify-center"
+          />
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">
+            تسجيل الدخول عبر Google غير مفعّل حالياً (مفتاح العميل غير مضبوط).
+          </p>
+        )}
       </form>
     </main>
   );
+}
+
+interface GoogleIdentityServices {
+  accounts: {
+    id: {
+      initialize: (config: {
+        client_id: string;
+        callback: (response: { credential?: string }) => void;
+        auto_select?: boolean;
+        cancel_on_tap_outside?: boolean;
+      }) => void;
+      renderButton: (
+        parent: HTMLElement,
+        options: Record<string, unknown>,
+      ) => void;
+      prompt: (moment?: string) => void;
+    };
+  };
 }
