@@ -26,7 +26,10 @@ function cleanName(name: string) {
 
 function decodeGoogleJwt(token: string) {
   try {
-    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const parts = token.split(".");
+    const payloadPart = parts[1];
+    if (!payloadPart) return null;
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
     const json = atob(base64);
     return JSON.parse(json) as Record<string, unknown>;
   } catch {
