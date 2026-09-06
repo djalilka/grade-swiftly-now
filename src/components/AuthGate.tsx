@@ -98,13 +98,14 @@ function AuthScreen() {
     }
     const payload = decodeGoogleJwt(token);
     const fullName =
-      typeof payload?.name === "string" && payload.name.trim()
-        ? payload.name.trim()
-        : typeof payload?.given_name === "string" && payload.given_name.trim()
-          ? payload.given_name.trim()
+      typeof payload?.["name"] === "string" && payload["name"].trim()
+        ? payload["name"].trim()
+        : typeof payload?.["given_name"] === "string" &&
+            payload["given_name"].trim()
+          ? payload["given_name"].trim()
           : "مستخدم جديد";
     const email =
-      typeof payload?.email === "string" ? payload.email.trim() : "";
+      typeof payload?.["email"] === "string" ? payload["email"].trim() : "";
 
     const next: UserProfile = {
       name: cleanName(fullName),
