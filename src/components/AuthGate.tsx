@@ -6,7 +6,8 @@ import { useRosterStore, saveProfile, type UserProfile } from "@/lib/roster-stor
 type Mode = "signup" | "login";
 
 const GOOGLE_CLIENT_ID =
-  (import.meta.env && (import.meta.env.VITE_GOOGLE_CLIENT_ID as string)) || "";
+  (import.meta.env && (import.meta.env["VITE_GOOGLE_CLIENT_ID"] as string)) ||
+  "";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { profile, ready } = useRosterStore();
