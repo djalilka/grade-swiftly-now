@@ -6,7 +6,8 @@ import { useRosterStore, saveProfile, type UserProfile } from "@/lib/roster-stor
 type Mode = "signup" | "login";
 
 const GOOGLE_CLIENT_ID =
-  (import.meta.env && (import.meta.env.VITE_GOOGLE_CLIENT_ID as string)) || "";
+  (import.meta.env && (import.meta.env["VITE_GOOGLE_CLIENT_ID"] as string)) ||
+  "";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { profile, ready } = useRosterStore();
@@ -25,7 +26,10 @@ function cleanName(name: string) {
 
 function decodeGoogleJwt(token: string) {
   try {
-    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const parts = token.split(".");
+    const payloadPart = parts[1];
+    if (!payloadPart) return null;
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
     const json = atob(base64);
     return JSON.parse(json) as Record<string, unknown>;
   } catch {
@@ -48,7 +52,8 @@ function AuthScreen() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!GOOGLE_CLIENT_ID) return;
-    if ((window as unknown as Record<string, unknown>).google) {
+    const w = window as unknown as Record<string, unknown>;
+    if (w["google"]) {
       initGis();
       return;
     }
@@ -93,13 +98,14 @@ function AuthScreen() {
     }
     const payload = decodeGoogleJwt(token);
     const fullName =
-      typeof payload?.name === "string" && payload.name.trim()
-        ? payload.name.trim()
-        : typeof payload?.given_name === "string" && payload.given_name.trim()
-          ? payload.given_name.trim()
+      typeof payload?.["name"] === "string" && payload["name"].trim()
+        ? payload["name"].trim()
+        : typeof payload?.["given_name"] === "string" &&
+            payload["given_name"].trim()
+          ? payload["given_name"].trim()
           : "مستخدم جديد";
     const email =
-      typeof payload?.email === "string" ? payload.email.trim() : "";
+      typeof payload?.["email"] === "string" ? payload["email"].trim() : "";
 
     const next: UserProfile = {
       name: cleanName(fullName),
