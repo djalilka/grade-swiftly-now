@@ -52,7 +52,8 @@ function AuthScreen() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!GOOGLE_CLIENT_ID) return;
-    if ((window as unknown as Record<string, unknown>).google) {
+    const w = window as unknown as Record<string, unknown>;
+    if (w["google"]) {
       initGis();
       return;
     }
